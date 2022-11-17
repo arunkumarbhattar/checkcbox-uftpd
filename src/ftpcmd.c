@@ -15,6 +15,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <checkcbox_extensions.h>
 #include "uftpd.h"
 #include <ctype.h>
 #include <arpa/ftp.h>
@@ -29,7 +30,7 @@
 
 typedef struct {
 	char *command;
-	void (*cb)(ctrl_t *ctr, char *arg);
+	void (*cb)(ctrl_t *ctr, _TPtr<char> arg);
 } ftp_cmd_t;
 
 static ftp_cmd_t supported[];
@@ -38,6 +39,57 @@ static void do_PORT(ctrl_t *ctrl, pend_t pending);
 static void do_LIST(uev_t *w, void *arg, int events);
 static void do_RETR(uev_t *w, void *arg, int events);
 static void do_STOR(uev_t *w, void *arg, int events);
+
+_TLIB static int t_stat(_TPtr<const char> path, struct stat *buf)
+{
+    return stat((const char*)path, buf);
+}
+
+_TLIB static size_t  t_strlcpy    (char* dst : itype(_TPtr<char>), const _TPtr<char> src, size_t siz)
+{
+    return strlcpy((char *)dst, (const char *)src, siz);
+}
+
+_TLIB static _TPtr<char> t_basename (_TPtr<char> __path)
+{
+return (_TPtr<char>)basename((char*)__path);
+}
+
+_TLIB static size_t  t_strlcat    (char* dst : itype(_TPtr<char>), const char* src: itype(_TPtr<const char>), size_t siz)
+{
+return strlcat((char*)dst, (const char*)src, siz);
+}
+
+_TLIB static int t_access (_TPtr<const char> __name, int __type)
+{
+    return access((const char*)__name, __type);
+}
+_TLIB static ssize_t t_send (int __fd, const _TPtr<void> __buf, size_t __n, int __flags)
+{
+    return send(__fd, (const void *)__buf, __n, __flags);
+}
+
+_TLIB static int t_string_valid(_TPtr<const char> str){
+    string_valid((const char*)str);
+}
+
+_TLIB static FILE * t_fopen(_TPtr<const char> restrict filename,
+            const char* restrict mode : itype(restrict _TNt_array_ptr<const char>))
+{
+    return fopen((const char*)filename, mode);
+}
+
+_TLIB static int t_utimensat (int __fd, _TPtr<const char> __path,
+                     const struct timespec __times[2],
+                     int __flags)
+{
+    return utimensat(__fd, (const char*)__path, __times, __flags);
+}
+
+_TLIB static inline int t_string_case_compare(const char *a : itype(_TPtr<const char>), const char *b : itype(_TPtr<const char>))
+{
+    return strlen(a) == strlen(b) && !strcasecmp((const char *)a, (const char *)b);
+}
 
 static int is_cont(char *msg)
 {
@@ -51,6 +103,34 @@ static int is_cont(char *msg)
 	}
 
 	return 0;
+}
+
+_TLIB static int t_is_cont(_TPtr<char> msg)
+{
+    _TPtr<char> ptr = NULL;
+
+    ptr = t_strchr(msg, '\r');
+    if (ptr) {
+        ptr++;
+        if (t_strchr(ptr, '\r'))
+            return 1;
+    }
+
+    return 0;
+}
+
+_TLIB static int t_mkdir (_TPtr<const char> __path, __mode_t __mode){
+    return mkdir((const char*)__path, __mode);
+}
+
+_TLIB static long long t_strtonum (_TPtr<const char> numstr, long long minval, long long maxval, const char **errstrp)
+{
+    strtonum((const char*)numstr, minval, maxval, errstrp);
+}
+
+_TLIB static inline int t_string_compare(const char *a : itype(_TPtr<const char>), const char *b : itype(_TPtr<const char>))
+{
+    return strlen(a) == strlen(b) && !t_strcmp(a, b);
 }
 
 static int send_msg(int sd, char *msg)
@@ -82,6 +162,37 @@ static int send_msg(int sd, char *msg)
 	DBG("Sent: %s%s", is_cont(msg) ? "\n" : "", msg);
 
 	return 0;
+}
+
+static int t_send_msg(int sd, _TPtr<char> msg)
+{
+    int n = 0;
+    int l;
+
+    if (!msg) {
+        err:
+        ERR(EINVAL, "Missing argument to send_msg()");
+        return 1;
+    }
+
+    l = t_strlen(msg);
+    if (l <= 0)
+        goto err;
+
+    while (n < l) {
+        int result = t_send(sd, msg + n, l, 0);
+
+        if (result < 0) {
+            ERR(errno, "Failed sending message to client");
+            return 1;
+        }
+
+        n += result;
+    }
+
+    DBG("Sent: %s%s", t_is_cont(msg) ? "\n" : "", msg);
+
+    return 0;
 }
 
 /*
@@ -286,13 +397,13 @@ static int do_abort(ctrl_t *ctrl)
 		ctrl->i = 0;
 
 		if (ctrl->file)
-			free(ctrl->file);
+			t_free(ctrl->file);
 		ctrl->file = NULL;
 	}
 
 	if (ctrl->file) {
 		uev_io_stop(&ctrl->data_watcher);
-		free(ctrl->file);
+		t_free(ctrl->file);
 		ctrl->file = NULL;
 	}
 
@@ -307,7 +418,7 @@ static int do_abort(ctrl_t *ctrl)
 	return close_data_connection(ctrl);
 }
 
-static void handle_ABOR(ctrl_t *ctrl, char *arg)
+static void handle_ABOR(ctrl_t *ctrl, _TPtr<char> arg)
 {
 	DBG("Aborting any current transfer ...");
 	if (do_abort(ctrl))
@@ -316,7 +427,7 @@ static void handle_ABOR(ctrl_t *ctrl, char *arg)
 	send_msg(ctrl->sd, "226 Closing data connection.\r\n");
 }
 
-static void handle_USER(ctrl_t *ctrl, char *name)
+static void handle_USER(ctrl_t *ctrl, _TPtr<char> name)
 {
 	if (ctrl->name[0]) {
 		ctrl->name[0] = 0;
@@ -324,7 +435,7 @@ static void handle_USER(ctrl_t *ctrl, char *name)
 	}
 
 	if (name) {
-		strlcpy(ctrl->name, name, sizeof(ctrl->name));
+		t_strlcpy(ctrl->name, name, sizeof(ctrl->name));
 		if (check_user_pass(ctrl) == 1) {
 			INFO("Guest logged in from %s", ctrl->clientaddr);
 			send_msg(ctrl->sd, "230 Guest login OK, access restrictions apply.\r\n");
@@ -336,7 +447,7 @@ static void handle_USER(ctrl_t *ctrl, char *name)
 	}
 }
 
-static void handle_PASS(ctrl_t *ctrl, char *pass)
+static void handle_PASS(ctrl_t *ctrl, _TPtr<char> pass)
 {
 	if (!ctrl->name[0]) {
 		send_msg(ctrl->sd, "503 No username given.\r\n");
@@ -348,7 +459,7 @@ static void handle_PASS(ctrl_t *ctrl, char *pass)
                 return;
         }
 
-	strlcpy(ctrl->pass, pass, sizeof(ctrl->pass));
+	t_strlcpy(ctrl->pass, pass, sizeof(ctrl->pass));
 	if (check_user_pass(ctrl) < 0) {
 		LOG("User %s from %s, invalid password!", ctrl->name, ctrl->clientaddr);
 		send_msg(ctrl->sd, "530 username or password is unacceptable\r\n");
@@ -359,20 +470,20 @@ static void handle_PASS(ctrl_t *ctrl, char *pass)
 	send_msg(ctrl->sd, "230 Guest login OK, access restrictions apply.\r\n");
 }
 
-static void handle_SYST(ctrl_t *ctrl, char *arg)
+static void handle_SYST(ctrl_t *ctrl, _TPtr<char> arg)
 {
 	char system[] = "215 UNIX Type: L8\r\n";
 
 	send_msg(ctrl->sd, system);
 }
 
-static void handle_TYPE(ctrl_t *ctrl, char *argument)
+static void handle_TYPE(ctrl_t *ctrl, _TPtr<char> argument)
 {
 	char type[24]  = "200 Type set to I.\r\n";
 	char unknown[] = "501 Invalid argument to TYPE.\r\n";
 
 	if (!argument)
-		argument = "Z";
+		t_strncpy(argument, "Z", 1);
 
 	switch (argument[0]) {
 	case 'A':
@@ -392,7 +503,7 @@ static void handle_TYPE(ctrl_t *ctrl, char *argument)
 	send_msg(ctrl->sd, type);
 }
 
-static void handle_PWD(ctrl_t *ctrl, char *arg)
+static void handle_PWD(ctrl_t *ctrl, _TPtr<char> arg)
 {
 	char buf[sizeof(ctrl->cwd) + 10];
 
@@ -400,10 +511,10 @@ static void handle_PWD(ctrl_t *ctrl, char *arg)
 	send_msg(ctrl->sd, buf);
 }
 
-static void handle_CWD(ctrl_t *ctrl, char *path)
+static void handle_CWD(ctrl_t *ctrl, _TPtr<char> path)
 {
 	struct stat st;
-	char *dir;
+	_TPtr<char> dir = NULL;
 
 	if (!path)
 		goto done;
@@ -413,7 +524,7 @@ static void handle_CWD(ctrl_t *ctrl, char *path)
 	 * entry is a file or directory.
 	 */
 	dir = compose_abspath(ctrl, path);
-	if (!dir || stat(dir, &st) || !S_ISDIR(st.st_mode)) {
+	if (!dir || t_stat(dir, &st) || !S_ISDIR(st.st_mode)) {
 		INFO("%s: CWD: invalid path to %s: %m", ctrl->clientaddr, path);
 		send_msg(ctrl->sd, "550 No such directory.\r\n");
 		return;
@@ -431,12 +542,12 @@ done:
 	send_msg(ctrl->sd, "250 OK\r\n");
 }
 
-static void handle_CDUP(ctrl_t *ctrl, char *path)
+static void handle_CDUP(ctrl_t *ctrl, _TPtr<char> path)
 {
-	handle_CWD(ctrl, "..");
+	handle_CWD(ctrl, StaticUncheckedToTStrAdaptor("..", strlen("..")));
 }
 
-static void handle_PORT(ctrl_t *ctrl, char *str)
+static void handle_PORT(ctrl_t *ctrl, _TPtr<char> str)
 {
 	int a, b, c, d, e, f;
 	char addr[INET_ADDRSTRLEN];
@@ -454,7 +565,7 @@ static void handle_PORT(ctrl_t *ctrl, char *str)
         }
 
 	/* Convert PORT command's argument to IP address + port */
-	sscanf(str, "%d,%d,%d,%d,%d,%d", &a, &b, &c, &d, &e, &f);
+	t_sscanf(str, "%d,%d,%d,%d,%d,%d", &a, &b, &c, &d, &e, &f);
 	snprintf(addr, sizeof(addr), "%d.%d.%d.%d", a, b, c, d);
 
 	/* Check IPv4 address using inet_aton(), throw away converted result */
@@ -471,7 +582,7 @@ static void handle_PORT(ctrl_t *ctrl, char *str)
 	send_msg(ctrl->sd, "200 PORT command successful.\r\n");
 }
 
-static void handle_EPRT(ctrl_t *ctrl, char *str)
+static void handle_EPRT(ctrl_t *ctrl, _TPtr<char> str)
 {
 	send_msg(ctrl->sd, "502 Command not implemented.\r\n");
 }
@@ -516,87 +627,89 @@ static char *mlsd_time(time_t mtime)
 	return str;
 }
 
-static const char *mlsd_type(char *name, int mode)
+static _TPtr<const char> mlsd_type(_TPtr<char> name, int mode)
 {
-	if (!strcmp(name, "."))
-		return "cdir";
-	if (!strcmp(name, ".."))
-		return "pdir";
+	if (!t_strcmp(name, "."))
+		return StaticUncheckedToTStrAdaptor("cdir", strlen("cdir"));
+	if (!t_strcmp(name, ".."))
+		return StaticUncheckedToTStrAdaptor("pdir", strlen("pdir"));
 
-	return S_ISDIR(mode) ? "dir" : "file";
+	return S_ISDIR(mode) ? StaticUncheckedToTStrAdaptor("dir", strlen(dir)) : StaticUncheckedToTStrAdaptor("file", strlen("file"));
 }
 
-void mlsd_fact(char fact, char *buf, size_t len, char *name, char *perms, struct stat *st)
+void mlsd_fact(char fact, _TPtr<char> buf, size_t len, _TPtr<char> name, _TPtr<char> perms, struct stat *st)
 {
-	char size[20];
+	_TPtr<char> size  = NULL;
+    size = TNtStrMalloc(20);
 
 	switch (fact) {
 	case 'm':
-		strlcat(buf, "modify=", len);
-		strlcat(buf, mlsd_time(st->st_mtime), len);
+		t_strlcat(buf, "modify=", len);
+		t_strlcat(buf, mlsd_time(st->st_mtime), len);
 		break;
 
 	case 'p':
-		strlcat(buf, "perm=", len);
-		strlcat(buf, perms, len);
+		t_strlcat(buf, "perm=", len);
+		t_strlcat(buf, perms, len);
 		break;
 
 	case 't':
-		strlcat(buf, "type=", len);
-		strlcat(buf, mlsd_type(name, st->st_mode), len);
+		t_strlcat(buf, "type=", len);
+		t_strlcat(buf, mlsd_type(name, st->st_mode), len);
 		break;
 
 
 	case 's':
 		if (S_ISDIR(st->st_mode))
 			return;
-		snprintf(size, sizeof(size), "size=%" PRIu64, st->st_size);
-		strlcat(buf, size, len);
+		t_snprintf(size, 20, StaticUncheckedToTStrAdaptor("size=%" PRIu64 , strlen("size=%" PRIu64)), st->st_size);
+		t_strlcat(buf, size, len);
 		break;
 
 	default:
 		return;
 	}
 
-	strlcat(buf, ";", len);
+	t_strlcat(buf, StaticUncheckedToTStrAdaptor(";", 1), len);
 }
 
-static void mlsd_printf(ctrl_t *ctrl, char *buf, size_t len, char *path, char *name, struct stat *st)
+static void mlsd_printf(ctrl_t *ctrl, _TPtr<char> buf, size_t len, _TPtr<char> path, _TPtr<char> name, struct stat *st)
 {
-	char perms[10] = "";
-	int ro = !access(path, R_OK);
-	int rw = !access(path, W_OK);
+	_TPtr<char> perms = TNtStrMalloc(10);
+    t_memset(perms, 0, 10);
+	int ro = !t_access(path, R_OK);
+	int rw = !t_access(path, W_OK);
 
 	if (S_ISDIR(st->st_mode)) {
 		/* XXX: Verify 'e' by checking that we can CD to the 'name' */
 		if (ro)
-			strlcat(perms, "le", sizeof(perms));
+			t_strlcat(perms, "le", 10);
 		if (rw)
-			strlcat(perms, "pc", sizeof(perms)); /* 'd' RMD, 'm' MKD */
+            t_strlcat(perms, "pc", 10); /* 'd' RMD, 'm' MKD */
 	} else {
 		if (ro)
-			strlcat(perms, "r", sizeof(perms));
+            t_strlcat(perms, "r", 10);
 		if (rw)
-			strlcat(perms, "w", sizeof(perms)); /* 'f' RNFR, 'd' DELE */
+            t_strlcat(perms, "w", 10); /* 'f' RNFR, 'd' DELE */
 	}
 
-	memset(buf, 0, len);
+	t_memset(buf, 0, len);
 	if (ctrl->d_num == -1 && ctrl->list_mode == LISTMODE_MLST)
-		strlcat(buf, " ", len);
+		t_strlcat(buf, " ", len);
 
 	for (int i = 0; ctrl->facts[i]; i++)
 		mlsd_fact(ctrl->facts[i], buf, len, name, perms, st);
 
-	strlcat(buf, " ", len);
-	strlcat(buf, name, len);
-	strlcat(buf, "\r\n", len);
+	t_strlcat(buf, " ", len);
+	t_strlcat(buf, name, len);
+	t_strlcat(buf, "\r\n", len);
 }
 
-static int list_printf(ctrl_t *ctrl, char *buf, size_t len, char *path, char *name)
+static int list_printf(ctrl_t *ctrl, _TPtr<char> buf, size_t len, _TPtr<char> path, _TPtr<char> name)
 {
 	struct stat st;
 
-	if (stat(path, &st))
+	if (t_stat(path, &st))
 		return -1;
 
 	switch (ctrl->list_mode) {
@@ -607,11 +720,12 @@ static int list_printf(ctrl_t *ctrl, char *buf, size_t len, char *path, char *na
 		break;
 
 	case LISTMODE_NLST:
-		snprintf(buf, len, "%s\r\n", name);
+		t_snprintf(buf, len, StaticUncheckedToTStrAdaptor("%s\r\n", strlen("%s\r\n")), name);
 		break;
 
 	case LISTMODE_LIST:
-		snprintf(buf, len, "%s 1 %5d %5d %12" PRIu64 " %s %s\r\n",
+		t_snprintf(buf, len, StaticUncheckedToTStrAdaptor("%s 1 %5d %5d %12" PRIu64 " %s %s\r\n",
+                                                          strlen("%s 1 %5d %5d %12" PRIu64 " %s %s\r\n")),
 			 mode_to_str(st.st_mode),
 			 0, 0, (uint64_t)st.st_size,
 			 time_to_str(st.st_mtime), name);
@@ -623,57 +737,61 @@ static int list_printf(ctrl_t *ctrl, char *buf, size_t len, char *path, char *na
 
 static void do_MLST(ctrl_t *ctrl)
 {
-	char buf[512] = { 0 };
-	char cwd[PATH_MAX];
+	_TPtr<char> buf = TNtStrMalloc(512);
+    t_memset(buf, 0, 512);
+	_TPtr<char> cwd = TNtStrMalloc(PATH_MAX);
+    t_memset(cwd, 0, PATH_MAX);
 	int sd = ctrl->sd;
-	char *path;
+	_TPtr<char> path = NULL;
 	int len;
 
 	if (ctrl->data_sd != -1)
 		sd = ctrl->data_sd;
 
-	len = snprintf(buf, sizeof(buf), "250- Listing %s\r\n", ctrl->file);
-	if (len < 0 || len > (int)sizeof(buf))
+	len = t_snprintf(buf, 512, StaticUncheckedToTStrAdaptor("250- Listing %s\r\n", strlen("250- Listing %s\r\n")), ctrl->file);
+	if (len < 0 || len > (int)512)
 		goto abort;
 
-	strlcpy(cwd, ctrl->file, sizeof(cwd));
+	t_strlcpy(cwd, ctrl->file, PATH_MAX);
 	path = compose_path(ctrl, cwd);
 	if (!path)
 		goto abort;
 
-	if (list_printf(ctrl, &buf[len], sizeof(buf) -  len, path, basename(ctrl->file))) {
+	if (list_printf(ctrl, &buf[len], 512 -  len, path, t_basename(ctrl->file))) {
 	abort:
 		do_abort(ctrl);
 		send_msg(ctrl->sd, "550 No such file or directory.\r\n");
 		return;
 	}
 
-	strlcat(buf, "250 End.\r\n", sizeof(buf));
-	send_msg(sd, buf);
+	t_strlcat(buf, "250 End.\r\n", 512);
+	t_send_msg(sd, buf);
 	do_abort(ctrl);
 }
 
 static void do_MLSD(ctrl_t *ctrl)
 {
-	char buf[512] = { 0 };
-	char cwd[PATH_MAX];
-	char *path;
+	_TPtr<char> buf = TNtStrMalloc(512);
+    t_memset(buf, 0, 512);
+	_TPtr<char> cwd = TNtStrMalloc(PATH_MAX);
+	_TPtr<char> path = NULL;
 
-	strlcpy(cwd, ctrl->file, sizeof(cwd));
+	t_strlcpy(cwd, ctrl->file, PATH_MAX);
 	path = compose_path(ctrl, cwd);
 	if (!path)
 		goto abort;
 
-	if (list_printf(ctrl, buf, sizeof(buf), path, basename(path))) {
+	if (list_printf(ctrl, buf, 512, path, t_basename(path))) {
 	abort:
 		do_abort(ctrl);
 		send_msg(ctrl->sd, "550 No such file or directory.\r\n");
 		return;
 	}
 
-	send_msg(ctrl->data_sd, buf);
+	t_send_msg(ctrl->data_sd, buf);
 	do_abort(ctrl);
-	send_msg(ctrl->sd, "226 Transfer complete.\r\n");
+	t_send_msg(ctrl->sd, StaticUncheckedToTStrAdaptor("226 Transfer complete.\r\n",
+                                                      strlen("226 Transfer complete.\r\n")));
 }
 
 static void do_LIST(uev_t *w, void *arg, int events)
@@ -681,7 +799,8 @@ static void do_LIST(uev_t *w, void *arg, int events)
 	ctrl_t *ctrl = (ctrl_t *)arg;
 	struct timeval tv;
 	ssize_t bytes;
-	char buf[BUFFER_SIZE] = { 0 };
+	_TPtr<char> buf = TNtStrMalloc(BUFFER_SIZE);
+    t_memset(buf, 0, BUFFER_SIZE);
 
 	if (UEV_ERROR == events || UEV_HUP == events) {
 		uev_io_start(w);
@@ -707,8 +826,9 @@ static void do_LIST(uev_t *w, void *arg, int events)
 
 	while (ctrl->i < ctrl->d_num) {
 		struct dirent *entry;
-		char cwd[PATH_MAX];
-		char *name, *path;
+		_TPtr<char> cwd =  TNtStrMalloc(PATH_MAX);
+		char* name = NULL;
+        _TPtr<char> path = NULL;
 		size_t len;
 
 		entry = ctrl->d[ctrl->i++];
@@ -718,8 +838,8 @@ static void do_LIST(uev_t *w, void *arg, int events)
 		if (!strcmp(name, ".") || !strcmp(name, ".."))
 			continue;
 
-		len = strlen(ctrl->file);
-		snprintf(cwd, sizeof(cwd), "%s%s%s", ctrl->file,
+		len = t_strlen(ctrl->file);
+		t_snprintf(cwd, PATH_MAX, StaticUncheckedToTStrAdaptor("%s%s%s", strlen("%s%s%s")), ctrl->file,
 			 ctrl->file[len > 0 ? len - 1 : len] == '/' ? "" : "/", name);
 
 		path = compose_path(ctrl, cwd);
@@ -729,12 +849,12 @@ static void do_LIST(uev_t *w, void *arg, int events)
 			continue;
 		}
 
-		if (list_printf(ctrl, buf, sizeof(buf), path, name))
+		if (list_printf(ctrl, buf, BUFFER_SIZE, path, StaticUncheckedToTStrAdaptor(name, strlen(name))))
 			goto fail;
 
 		DBG("LIST %s", buf);
 
-		bytes = send(ctrl->data_sd, buf, strlen(buf), 0);
+		bytes = t_send(ctrl->data_sd, buf, t_strlen(buf), 0);
 		if (-1 == bytes) {
 			if (ECONNRESET == errno)
 				DBG("Connection reset by client.");
@@ -764,12 +884,13 @@ static const char *mode2op(int mode)
 	return "LST?";
 }
 
-static void list(ctrl_t *ctrl, char *arg, int mode)
+static void list(ctrl_t *ctrl, _TPtr<char> arg, int mode)
 {
-	char *path;
+	_TPtr<char> path = NULL;
 
-	if (string_valid(arg)) {
-		char *ptr, *quot;
+	if (t_string_valid(arg)) {
+		_TPtr<char> ptr = NULL;
+        _TPtr<char> quot = NULL;
 
 		/* Check if client sends ls arguments ... */
 		ptr = arg;
@@ -786,15 +907,15 @@ static void list(ctrl_t *ctrl, char *arg, int mode)
 		}
 
 		/* Strip any "" from "<arg>" */
-		while ((quot = strchr(ptr, '"'))) {
-			char *ptr2;
+		while ((quot = t_strchr(ptr, '"'))) {
+			_TPtr<char> ptr2 = NULL;
 
-			ptr2 = strchr(&quot[1], '"');
+			ptr2 = t_strchr(&quot[1], '"');
 			if (!ptr2)
 				break;
 
-			memmove(ptr2, &ptr2[1], strlen(ptr2));
-			memmove(quot, &quot[1], strlen(quot));
+			t_memmove(ptr2, &ptr2[1], t_strlen(ptr2));
+			t_memmove(quot, &quot[1], t_strlen(quot));
 		}
 		arg = ptr;
 	}
@@ -810,11 +931,11 @@ static void list(ctrl_t *ctrl, char *arg, int mode)
 	}
 
 	ctrl->list_mode = mode;
-	ctrl->file = strdup(arg ? arg : "");
+	ctrl->file = t_strdup(arg ? arg : "");
 	ctrl->i = 0;
-	ctrl->d_num = scandir(path, &ctrl->d, NULL, alphasort);
+	ctrl->d_num = scandir((const char*)TaintedToCheckedStrAdaptor(path, t_strlen(path)), &ctrl->d, NULL, alphasort);
 	if (ctrl->d_num == -1) {
-		if (access(path, R_OK)) {
+		if (t_access(path, R_OK)) {
 			send_msg(ctrl->sd, "550 No such file or directory.\r\n");
 			DBG("Failed reading directory '%s': %s", path, strerror(errno));
 			return;
@@ -831,22 +952,22 @@ static void list(ctrl_t *ctrl, char *arg, int mode)
 	do_PORT(ctrl, PENDING_LIST);
 }
 
-static void handle_LIST(ctrl_t *ctrl, char *arg)
+static void handle_LIST(ctrl_t *ctrl, _TPtr<char> arg)
 {
 	list(ctrl, arg, LISTMODE_LIST);
 }
 
-static void handle_NLST(ctrl_t *ctrl, char *arg)
+static void handle_NLST(ctrl_t *ctrl, _TPtr<char> arg)
 {
 	list(ctrl, arg, LISTMODE_NLST);
 }
 
-static void handle_MLST(ctrl_t *ctrl, char *arg)
+static void handle_MLST(ctrl_t *ctrl, _TPtr<char> arg)
 {
 	list(ctrl, arg, LISTMODE_MLST);
 }
 
-static void handle_MLSD(ctrl_t *ctrl, char *arg)
+static void handle_MLSD(ctrl_t *ctrl, _TPtr<char> arg)
 {
 	list(ctrl, arg, LISTMODE_MLSD);
 }
@@ -914,7 +1035,7 @@ static void do_pasv_connection(uev_t *w, void *arg, int events)
 	ctrl->pending = PENDING_NONE;
 }
 
-static int do_PASV(ctrl_t *ctrl, char *arg, struct sockaddr *data, socklen_t *len)
+static int do_PASV(ctrl_t *ctrl, _TPtr<char> arg, struct sockaddr *data, socklen_t *len)
 {
 	struct sockaddr_in server;
 
@@ -967,7 +1088,7 @@ static int do_PASV(ctrl_t *ctrl, char *arg, struct sockaddr *data, socklen_t *le
 	return 0;
 }
 
-static void handle_PASV(ctrl_t *ctrl, char *arg)
+static void handle_PASV(ctrl_t *ctrl, _TPtr<char> arg)
 {
 	struct sockaddr_in data;
 	socklen_t len = sizeof(data);
@@ -998,13 +1119,13 @@ static void handle_PASV(ctrl_t *ctrl, char *arg)
 	free(msg);
 }
 
-static void handle_EPSV(ctrl_t *ctrl, char *arg)
+static void handle_EPSV(ctrl_t *ctrl, _TPtr<char> arg)
 {
 	struct sockaddr_in data;
 	socklen_t len = sizeof(data);
 	char buf[200];
 
-	if (string_valid(arg) && string_case_compare(arg, "ALL")) {
+	if (t_string_valid(arg) && t_string_case_compare(arg, "ALL")) {
 		send_msg(ctrl->sd, "200 Command OK\r\n");
 		return;
 	}
@@ -1115,14 +1236,14 @@ static void do_PORT(ctrl_t *ctrl, pend_t pending)
 	ctrl->pending = PENDING_NONE;
 }
 
-static void handle_RETR(ctrl_t *ctrl, char *file)
+static void handle_RETR(ctrl_t *ctrl, _TPtr<char> file)
 {
 	FILE *fp;
-	char *path;
+	_TPtr<char> path = NULL;
 	struct stat st;
 
 	path = compose_abspath(ctrl, file);
-	if (!path || stat(path, &st)) {
+	if (!path || t_stat(path, &st)) {
 		INFO("%s: RETR: invalid path to %s: %m", ctrl->clientaddr, file);
 		send_msg(ctrl->sd, "550 No such file or directory.\r\n");
 		return;
@@ -1133,7 +1254,7 @@ static void handle_RETR(ctrl_t *ctrl, char *file)
 		return;
 	}
 
-	fp = fopen(path, "rb");
+	fp = t_fopen(path, "rb");
 	if (!fp) {
 		if (errno != ENOENT)
 			ERR(errno, "Failed RETR %s for %s", path, ctrl->clientaddr);
@@ -1142,7 +1263,7 @@ static void handle_RETR(ctrl_t *ctrl, char *file)
 	}
 
 	ctrl->fp = fp;
-	ctrl->file = strdup(file);
+	ctrl->file = t_strdup(file);
 
 	if (ctrl->data_sd > -1) {
 		if (ctrl->offset) {
@@ -1163,26 +1284,27 @@ static void handle_RETR(ctrl_t *ctrl, char *file)
 }
 
 /* Request to set mtime, ncftp does this */
-static void handle_MDTM(ctrl_t *ctrl, char *file)
+static void handle_MDTM(ctrl_t *ctrl, _TPtr<char>  file)
 {
 	struct stat st;
 	struct tm *tm;
-	char *path, *ptr;
+	_TPtr<char> path = NULL;
+    _TPtr<char> ptr = NULL;
 	char *mtime = NULL;
 	char buf[80];
 
         if (!file)
 		goto missing;
 
-	ptr = strchr(file, ' ');
+	ptr = t_strchr(file, ' ');
 	if (ptr) {
 		*ptr++ = 0;
-		mtime = file;
+		mtime = (char*)TaintedToCheckedStrAdaptor(file, t_strlen(file));
 		file  = ptr;
         }
 
 	path = compose_abspath(ctrl, file);
-	if (!path || stat(path, &st) || !S_ISREG(st.st_mode)) {
+	if (!path || t_stat(path, &st) || !S_ISREG(st.st_mode)) {
 	missing:
 		INFO("MDTM: invalid path to %s: %m", file);
 		send_msg(ctrl->sd, "550 Not a regular file.\r\n");
@@ -1204,14 +1326,14 @@ static void handle_MDTM(ctrl_t *ctrl, char *file)
 		}
 
 		times[1].tv_sec = mktime(&tm);
-		rc = utimensat(0, path, times, 0);
+		rc = t_utimensat(0, path, times, 0);
 		if (rc) {
 			ERR(errno, "Failed setting MTIME %s of %s", mtime, file);
 			goto fail;
 		}
 
 		LOG("User %s from %s changed mtime of %s", ctrl->name, ctrl->clientaddr, file);
-		(void)stat(path, &st);
+		(void)t_stat(path, &st);
 	}
 
 	tm = gmtime(&st.st_mtime);
@@ -1270,10 +1392,10 @@ static void do_STOR(uev_t *w, void *arg, int events)
 		ERR(errno, "552 Disk full.");
 }
 
-static void handle_STOR(ctrl_t *ctrl, char *file)
+static void handle_STOR(ctrl_t *ctrl, _TPtr<char> file)
 {
 	FILE *fp = NULL;
-	char *path;
+    _TPtr<char> path = NULL;
 	int rc = 0;
 
 	path = compose_abspath(ctrl, file);
@@ -1283,7 +1405,7 @@ static void handle_STOR(ctrl_t *ctrl, char *file)
 	}
 
 	DBG("Trying to write to %s ...", path);
-	fp = fopen(path, "wb");
+	fp = t_fopen(path, "wb");
 	if (!fp) {
 		/* If EACCESS client is trying to do something disallowed */
 		ERR(errno, "Failed writing %s", path);
@@ -1294,7 +1416,7 @@ static void handle_STOR(ctrl_t *ctrl, char *file)
 	}
 
 	ctrl->fp = fp;
-	ctrl->file = strdup(file);
+	ctrl->file = t_strdup(file);
 
 	if (ctrl->data_sd > -1) {
 		if (ctrl->offset)
@@ -1313,9 +1435,9 @@ static void handle_STOR(ctrl_t *ctrl, char *file)
 	do_PORT(ctrl, PENDING_STOR);
 }
 
-static void handle_DELE(ctrl_t *ctrl, char *file)
+static void handle_DELE(ctrl_t *ctrl, _TPtr<char> file)
 {
-	char *path;
+    _TPtr<char> path = NULL;
 
 	path = compose_abspath(ctrl, file);
 	if (!path) {
@@ -1323,7 +1445,7 @@ static void handle_DELE(ctrl_t *ctrl, char *file)
 		goto fail;
 	}
 
-	if (remove(path)) {
+	if (t_remove(path)) {
 		if (ENOENT == errno)
 		fail:	send_msg(ctrl->sd, "550 No such file or directory.\r\n");
 		else if (EPERM == errno)
@@ -1339,9 +1461,9 @@ static void handle_DELE(ctrl_t *ctrl, char *file)
 	send_msg(ctrl->sd, "200 Command OK\r\n");
 }
 
-static void handle_MKD(ctrl_t *ctrl, char *arg)
+static void handle_MKD(ctrl_t *ctrl, _TPtr<char> arg)
 {
-	char *path;
+	_TPtr<char> path = NULL;
 
 	path = compose_abspath(ctrl, arg);
 	if (!path) {
@@ -1349,7 +1471,7 @@ static void handle_MKD(ctrl_t *ctrl, char *arg)
 		goto fail;
 	}
 
-	if (mkdir(path, 0755)) {
+	if (t_mkdir(path, 0755)) {
 		if (EPERM == errno)
 		fail:	send_msg(ctrl->sd, "550 Not allowed to create directory.\r\n");
 		else
@@ -1361,43 +1483,43 @@ static void handle_MKD(ctrl_t *ctrl, char *arg)
 	send_msg(ctrl->sd, "200 Command OK\r\n");
 }
 
-static void handle_RMD(ctrl_t *ctrl, char *arg)
+static void handle_RMD(ctrl_t *ctrl, _TPtr<char> arg)
 {
 	handle_DELE(ctrl, arg);
 }
 
-static void handle_REST(ctrl_t *ctrl, char *arg)
+static void handle_REST(ctrl_t *ctrl, _TPtr<char> arg)
 {
 	const char *errstr;
 	char buf[80];
 
-	if (!string_valid(arg)) {
+	if (!t_string_valid(arg)) {
 		send_msg(ctrl->sd, "550 Invalid argument.\r\n");
 		return;
 	}
 
-	ctrl->offset = strtonum(arg, 0, INT64_MAX, &errstr);
+	ctrl->offset = t_strtonum(arg, 0, INT64_MAX, &errstr);
 	snprintf(buf, sizeof(buf), "350 Restarting at %ld.  Send STOR or RETR to continue transfer.\r\n", ctrl->offset);
 	send_msg(ctrl->sd, buf);
 }
 
-static size_t num_nl(char *file)
+static size_t num_nl(_TPtr<char> file)
 {
 	FILE *fp;
-	char buf[80];
+	_TPtr<char> buf = TNtStrMalloc(80);
 	size_t len, num = 0;
 
-	fp = fopen(file, "r");
+	fp = t_fopen(file, "r");
 	if (!fp)
 		return 0;
 
 	do {
-		char *ptr = buf;
+		_TPtr<char> ptr = buf;
 
-		len = fread(buf, sizeof(char), sizeof(buf) - 1, fp);
+		len = t_fread(buf, 80, 80 - 1, fp);
 		if (len > 0) {
 			buf[len] = 0;
-			while ((ptr = strchr(ptr, '\n'))) {
+			while ((ptr = t_strchr(ptr, '\n'))) {
 				ptr++;
 				num++;
 			}
@@ -1408,15 +1530,15 @@ static size_t num_nl(char *file)
 	return num;
 }
 
-static void handle_SIZE(ctrl_t *ctrl, char *file)
+static void handle_SIZE(ctrl_t *ctrl, _TPtr<char> file)
 {
-	char *path;
+	_TPtr<char> path = NULL;
 	char buf[80];
 	size_t extralen = 0;
 	struct stat st;
 
 	path = compose_abspath(ctrl, file);
-	if (!path || stat(path, &st) || S_ISDIR(st.st_mode)) {
+	if (!path || t_stat(path, &st) || S_ISDIR(st.st_mode)) {
 		send_msg(ctrl->sd, "550 No such file, or argument is a directory.\r\n");
 		return;
 	}
@@ -1431,7 +1553,7 @@ static void handle_SIZE(ctrl_t *ctrl, char *file)
 }
 
 /* No operation - used as session keepalive by clients. */
-static void handle_NOOP(ctrl_t *ctrl, char *arg)
+static void handle_NOOP(ctrl_t *ctrl, _TPtr<char> arg)
 {
 	send_msg(ctrl->sd, "200 NOOP OK.\r\n");
 }
@@ -1446,38 +1568,38 @@ static void handle_RNTO(ctrl_t *ctrl, char *arg)
 }
 #endif
 
-static void handle_QUIT(ctrl_t *ctrl, char *arg)
+static void handle_QUIT(ctrl_t *ctrl, _TPtr<char> arg)
 {
 	send_msg(ctrl->sd, "221 Goodbye.\r\n");
 	uev_exit(ctrl->ctx);
 }
 
-static void handle_CLNT(ctrl_t *ctrl, char *arg)
+static void handle_CLNT(ctrl_t *ctrl, _TPtr<char> arg)
 {
 	send_msg(ctrl->sd, "200 CLNT\r\n");
 }
 
-static void handle_OPTS(ctrl_t *ctrl, char *arg)
+static void handle_OPTS(ctrl_t *ctrl, _TPtr<char> arg)
 {
 	/* OPTS MLST type;size;modify;perm; */
-	if (arg && strstr(arg, "MLST")) {
+	if (arg && t_strstr(arg, "MLST")) {
 		size_t i = 0;
-		char *ptr;
+		_TPtr<char> ptr = NULL;
 		char buf[42] = "200 MLST OPTS ";
 		char facts[10] = { 0 };
 
-		ptr = strtok(arg + 4, " \t;");
+		ptr = t_strtok(arg + 4, " \t;");
 		while (ptr && i < sizeof(facts) - 1) {
-			if (!strcmp(ptr, "modify") ||
-			    !strcmp(ptr, "perm")   ||
-			    !strcmp(ptr, "size")   ||
-			    !strcmp(ptr, "type")) {
+			if (!t_strcmp(ptr, "modify") ||
+			    !t_strcmp(ptr, "perm")   ||
+			    !t_strcmp(ptr, "size")   ||
+			    !t_strcmp(ptr, "type")) {
 				facts[i++] = ptr[0];
-				strlcat(buf, ptr, sizeof(buf));
-				strlcat(buf, ";", sizeof(buf));
+				t_strlcat(buf, ptr, sizeof(buf));
+				t_strlcat(buf, ";", sizeof(buf));
 			}
 
-			ptr = strtok(NULL, ";");
+			ptr = t_strtok(NULL, ";");
 		}
 		strlcat(buf, "\r\n", sizeof(buf));
 
@@ -1488,13 +1610,13 @@ static void handle_OPTS(ctrl_t *ctrl, char *arg)
 		send_msg(ctrl->sd, "200 UTF8 OPTS ON\r\n");
 }
 
-static void handle_HELP(ctrl_t *ctrl, char *arg)
+static void handle_HELP(ctrl_t *ctrl, _TPtr<char> arg)
 {
 	ftp_cmd_t *cmd;
 	char buf[80];
 	int i = 0;
 
-	if (string_valid(arg) && !string_compare(arg, "SITE")) {
+	if (t_string_valid(arg) && !t_string_compare(arg, "SITE")) {
 		send_msg(ctrl->sd, "500 command HELP does not take any arguments on this server.\r\n");
 		return;
 	}
@@ -1512,7 +1634,7 @@ static void handle_HELP(ctrl_t *ctrl, char *arg)
 	send_msg(ctrl->sd, ctrl->buf);
 }
 
-static void handle_FEAT(ctrl_t *ctrl, char *arg)
+static void handle_FEAT(ctrl_t *ctrl, _TPtr<char> arg)
 {
 	snprintf(ctrl->buf, ctrl->bufsz, "211-Features:\r\n"
 		 " EPSV\r\n"
@@ -1605,7 +1727,7 @@ static void read_client_command(uev_t *w, void *arg, int events)
 
 	for (cmd = &supported[0]; cmd->command; cmd++) {
 		if (string_compare(command, cmd->command)) {
-			cmd->cb(ctrl, argument);
+			cmd->cb(ctrl, StaticUncheckedToTStrAdaptor(argument, strlen(argument)));
 			return;
 		}
 	}
@@ -1625,7 +1747,7 @@ static void ftp_command(ctrl_t *ctrl)
 	}
 
 	snprintf(ctrl->buf, ctrl->bufsz, "220 %s (%s) ready.\r\n", prognm, VERSION);
-	send_msg(ctrl->sd, ctrl->buf);
+	send_msg(ctrl->sd, ctrl->buf);s
 
 	uev_signal_init(ctrl->ctx, &sigterm_watcher, child_exit, NULL, SIGTERM);
 	uev_io_init(ctrl->ctx, &ctrl->io_watcher, read_client_command, ctrl, ctrl->sd, UEV_READ);

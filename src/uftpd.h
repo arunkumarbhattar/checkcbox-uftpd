@@ -137,7 +137,7 @@ typedef struct {
 	char     facts[10];
 	pend_t   pending; 	/* Pending op: LIST, RETR, STOR */
 	char     list_mode;	/* Current LIST mode */
-	char    *file;	        /* Current file name to fetch */
+	_TPtr<char>   file;	        /* Current file name to fetch */
 	off_t    offset;	/* Offset/block in current file, for REST/WRQ */
 	FILE    *fp;		/* Current file in operation */
 	int      i;		/* i of d_num in 'd' */
@@ -170,8 +170,8 @@ int     del_session(ctrl_t *ctrl, int isftp);
 int     ftp_session(uev_ctx_t *ctx, int client);
 int     tftp_session(uev_ctx_t *ctx, int client);
 
-char   *compose_path(ctrl_t *ctrl, char *path);
-char   *compose_abspath(ctrl_t *ctrl, char *path);
+_TPtr<char>   compose_path(ctrl_t *ctrl, _TPtr<char> path);
+_TPtr<char>   compose_abspath(ctrl_t *ctrl, _TPtr<char> path);
 int     set_nonblock(int fd);
 int     open_socket(int port, int type, char *desc);
 void    convert_address(struct sockaddr_storage *ss, char *buf, size_t len);

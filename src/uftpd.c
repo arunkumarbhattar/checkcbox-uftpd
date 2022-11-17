@@ -16,6 +16,11 @@
  */
 
 #include "uftpd.h"
+_TLIB static size_t  t_strlcpy    (_TPtr<char> dst, const _TPtr<char> src, size_t siz)
+{
+return strlcpy((char *)dst, (const char *)src, siz);
+}
+
 
 /* Global daemon settings */
 char *prognm      = PACKAGE_NAME;
@@ -237,6 +242,9 @@ static int serve_files(uev_ctx_t *ctx)
 	int ftp, tftp;
 
 	DBG("Starting services ...");
+    printf("Starting services ...\n");
+    // print the address of ctx
+    printf("ctx: %p\n", ctx);
 	ftp  = start_service(ctx, &ftp_watcher,   ftp_cb, do_ftp, SOCK_STREAM, "FTP");
 	tftp = start_service(ctx, &tftp_watcher, tftp_cb, do_tftp, SOCK_DGRAM, "TFTP");
 

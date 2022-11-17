@@ -18,7 +18,7 @@
 #include "uftpd.h"
 #include <poll.h>
 #include <arpa/tftp.h>
-
+#include <checkcbox_extensions.h>
 /*
  * Theory of operation, from RFC1350:
  *
@@ -40,6 +40,11 @@
  *        |                           |
  *
  */
+
+_TLIB static size_t  t_strlcpy    (char* dst : itype(_TPtr<char>), const _TPtr<char> src, size_t siz)
+{
+return strlcpy((char *)dst, (const char *)src, siz);
+}
 
 /* Send @len bytes data in @ctrl->buf */
 static int do_send(ctrl_t *ctrl, size_t len)
@@ -166,12 +171,12 @@ static int alloc_buf(ctrl_t *ctrl, size_t segsize)
 }
 
 /* Parse TFTP payload in WRQ/RRQ for filename and optional blksize+timeout */
-static int parse_RWRQ(ctrl_t *ctrl, char *buf, size_t len)
+static int parse_RWRQ(ctrl_t *ctrl, _TPtr<char> buf, size_t len)
 {
-	size_t opt_len = strlen(buf) + 1;
+	size_t opt_len = t_strlen(buf) + 1;
 
 	/* First opt is always filename */
-	ctrl->file = strdup(buf);
+	ctrl->file = t_strdup(buf);
 	if (!ctrl->file)
 		return send_ERROR(ctrl, EUNDEF, NULL);
 
@@ -179,16 +184,16 @@ static int parse_RWRQ(ctrl_t *ctrl, char *buf, size_t len)
 		/* Prepare to read options */
 		buf += opt_len;
 		len -= opt_len;
-		opt_len = strlen(buf) + 1;
+		opt_len = t_strlen(buf) + 1;
 
-		if (!strncasecmp(buf, "blksize", 7)) {
+		if (!t_strncasecmp(buf, "blksize", 7)) {
 			size_t sz = 0;
 
 			buf += opt_len;
 			len -= opt_len;
-			opt_len = strlen(buf) + 1;
+			opt_len = t_strlen(buf) + 1;
 
-			sscanf(buf, "%zd", &sz);
+			t_sscanf(buf, "%zd", &sz);
 			if (sz < MIN_SEGSIZE)
 				continue; /* Ignore if too small for us. */
 
@@ -210,7 +215,7 @@ static int parse_RWRQ(ctrl_t *ctrl, char *buf, size_t len)
 
 static int handle_RRQ(ctrl_t *ctrl)
 {
-	char *path;
+	_TPtr<char> path = NULL;
 
 	path = compose_path(ctrl, ctrl->file);
 	if (!path) {
@@ -218,7 +223,7 @@ static int handle_RRQ(ctrl_t *ctrl)
 		return send_ERROR(ctrl, ENOTFOUND, NULL);
 	}
 
-	ctrl->fp = fopen(path, "r");
+	ctrl->fp = t_fopen(path, "r");
 	if (!ctrl->fp) {
 		ERR(errno, "%s: Failed opening '%s'", ctrl->clientaddr, path);
 		return send_ERROR(ctrl, ENOTFOUND, NULL);
@@ -229,7 +234,7 @@ static int handle_RRQ(ctrl_t *ctrl)
 
 static int handle_WRQ(ctrl_t *ctrl)
 {
-	char *path;
+	_TPtr<char> path = NULL;
 
 	path = compose_path(ctrl, ctrl->file);
 	if (!path) {
@@ -238,7 +243,7 @@ static int handle_WRQ(ctrl_t *ctrl)
 	}
 
 	ctrl->offset = 1;	/* First expected block */
-	ctrl->fp = fopen(path, "w");
+	ctrl->fp = t_fopen(path, "w");
 	if (!ctrl->fp) {
 		ERR(errno, "%s: Failed opening '%s'", ctrl->clientaddr, path);
 		return send_ERROR(ctrl, ENOTFOUND, NULL);
@@ -301,6 +306,7 @@ static void read_client_command(uev_t *w, void *arg, int events)
 	uint16_t         port, op, block;
 	struct sockaddr *addr = (struct sockaddr *)&ctrl->client_sa;
 	socklen_t        addr_len = sizeof(ctrl->client_sa);
+    _TPtr<char> TaintedTh_Stuff = NULL;
 
 	/* Reset inactivity timer. */
 	uev_timer_set(&ctrl->timeout_watcher, INACTIVITY_TIMER, 0);
@@ -323,26 +329,36 @@ static void read_client_command(uev_t *w, void *arg, int events)
 	switch (op) {
 	case RRQ:
 		len -= ctrl->th->th_stuff - ctrl->buf;
-		if (parse_RWRQ(ctrl, ctrl->th->th_stuff, len)) {
+        // We are goinf to marshall over the data in the Checked Memory buffer (ctrl->th->th_stuff)
+        // into the Tainted Region
+        TaintedTh_Stuff = TNtStrMalloc(len);
+        t_strncpy(TaintedTh_Stuff, ctrl->th->th_stuff, len);
+		if (parse_RWRQ(ctrl, TaintedTh_Stuff, len)) {
 			ERR(errno, "Failed parsing TFTP RRQ");
 			active = 0;
+            t_free(TaintedTh_Stuff);
 			break;
 		}
 		LOG("tftp RRQ '%s' from %s:%d", ctrl->file, ctrl->clientaddr, port);
 		active = handle_RRQ(ctrl);
-		free(ctrl->file);
+        t_free(TaintedTh_Stuff);
+		t_free(ctrl->file);
 		break;
 
 	case WRQ:
 		len -= ctrl->th->th_stuff - ctrl->buf;
-		if (parse_RWRQ(ctrl, ctrl->th->th_stuff, len)) {
+
+        TaintedTh_Stuff = TNtStrMalloc(len);
+		if (parse_RWRQ(ctrl, TaintedTh_Stuff, len)) {
 			ERR(errno, "Failed parsing TFTP WRQ");
 			active = 0;
+            t_free(TaintedTh_Stuff);
 			break;
 		}
 		LOG("tftp WRQ '%s' from %s:%d", ctrl->file, ctrl->clientaddr, port);
 		handle_WRQ(ctrl);
-		free(ctrl->file);
+        t_free(TaintedTh_Stuff);
+		t_free(ctrl->file);
 		break;
 
 	case DATA:		/* Received data after WRQ */

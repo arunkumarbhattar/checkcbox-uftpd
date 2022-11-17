@@ -16,6 +16,38 @@
  */
 
 #include "uftpd.h"
+#include <checkcbox_extensions.h>
+
+_TLIB static size_t  t_strlcat    (char* dst : itype(_TPtr<char>), const char* src: itype(_TPtr<const char>), size_t siz)
+{
+    return strlcat((char*)dst, (const char*)src, siz);
+}
+
+_TLIB static _TPtr<char> t_basename (_TPtr<char> __path)
+{
+    return (_TPtr<char>)basename((char*)__path);
+}
+
+_TLIB static _TPtr<char> t_dirname (_TPtr<char> __path)
+{
+    return (_TPtr<char>)dirname((char*)__path);
+}
+
+_TLIB static _TPtr<char> t_realpath (_TPtr<const char> __name,
+                       _TPtr<char> __resolved)
+{
+    return (_TPtr<char>)realpath((const char*)__name, (char*)__resolved);
+}
+
+_TLIB static int t_stat(_TPtr<const char> path, struct stat *buf)
+{
+    return stat((const char*)path, buf);
+}
+
+_TLIB static size_t  t_strlcpy    (char* dst : itype(_TPtr<char>), const _TPtr<char> src, size_t siz)
+{
+return strlcpy((char *)dst, (const char *)src, siz);
+}
 
 int chrooted = 0;
 
@@ -30,27 +62,30 @@ int chrooted = 0;
  *
  * Forced dir ------> /srv/ftp/etc
  */
-char *compose_path(ctrl_t *ctrl, char *path)
+_TPtr<char> compose_path(ctrl_t *ctrl, _TPtr<char> path)
 {
-	static char rpath[PATH_MAX];
-	char dir[PATH_MAX] = { 0 };
-	char *name, *ptr;
+	_TPtr<char> rpath = (_TPtr<char>)TNtStrMalloc(PATH_MAX);
+	_TPtr<char> dir = (_TPtr<char>)TNtStrMalloc(PATH_MAX);
+    //set all the memory to 0
+    t_memset(dir, 0, PATH_MAX);
+	_TPtr<char> name = NULL;
+    _TPtr<char> ptr = NULL;
 	struct stat st;
 
-	strlcpy(dir, ctrl->cwd, sizeof(dir));
+	t_strlcpy(dir, StaticUncheckedToTStrAdaptor(ctrl->cwd, PATH_MAX), PATH_MAX);
 	DBG("Compose path from cwd: %s, arg: %s", ctrl->cwd, path ?: "");
-	if (!path || !strlen(path))
+	if (!path || !t_strlen(path))
 		goto check;
 
 	if (path[0] != '/') {
-		if (dir[strlen(dir) - 1] != '/')
-			strlcat(dir, "/", sizeof(dir));
+		if (dir[t_strlen(dir) - 1] != '/')
+			t_strlcat(dir, "/", PATH_MAX);
 	}
-	strlcat(dir, path, sizeof(dir));
+	t_strlcat(dir, path, PATH_MAX);
 
 check:
-	while ((ptr = strstr(dir, "//")))
-		memmove(ptr, &ptr[1], strlen(&ptr[1]) + 1);
+	while ((ptr = t_strstr(dir, "//")))
+		t_memmove(ptr, &ptr[1], t_strlen(&ptr[1]) + 1);
 
 	if (!chrooted) {
 		size_t len = strlen(home);
@@ -58,8 +93,8 @@ check:
 //		DBG("Server path from CWD: %s", dir);
 		if (len > 0 && home[len - 1] == '/')
 			len--;
-		memmove(dir + len, dir, strlen(dir) + 1);
-		memcpy(dir, home, len);
+		t_memmove(dir + len, dir, t_strlen(dir) + 1);
+		t_memcpy(dir, home, len);
 //		DBG("Resulting non-chroot path: %s", dir);
 	}
 
@@ -67,8 +102,8 @@ check:
 	 * Handle directories slightly differently, since dirname() on a
 	 * directory returns the parent directory.  So, just squash ..
 	 */
-	if (!stat(dir, &st) && S_ISDIR(st.st_mode)) {
-		if (!realpath(dir, rpath))
+	if (!t_stat(dir, &st) && S_ISDIR(st.st_mode)) {
+		if (!t_realpath(dir, rpath))
 			return NULL;
 	} else {
 		/*
@@ -76,11 +111,11 @@ check:
 		 * STOR may want to save a new file.  Then append the
 		 * file and return it.
 		 */
-		name = basename(path);
-		ptr = dirname(dir);
+		name = t_basename(path);
+		ptr = t_dirname(dir);
 
-		memset(rpath, 0, sizeof(rpath));
-		if (!realpath(ptr, rpath)) {
+		t_memset(rpath, 0, PATH_MAX);
+		if (!t_realpath(ptr, rpath)) {
 			INFO("Failed realpath(%s): %m", ptr);
 			return NULL;
 		}
@@ -88,11 +123,11 @@ check:
 //		DBG("realpath(%s) => %s", ptr, rpath);
 
 		if (rpath[1] != 0)
-			strlcat(rpath, "/", sizeof(rpath));
-		strlcat(rpath, name, sizeof(rpath));
+			t_strlcat(rpath, "/", PATH_MAX);
+		t_strlcat(rpath, name, PATH_MAX);
 	}
 
-	if (!chrooted && strncmp(rpath, home, strlen(home))) {
+	if (!chrooted && t_strncmp(rpath, home, strlen(home))) {
 		DBG("Failed non-chroot dir:%s vs home:%s", dir, home);
 		return NULL;
 	}
@@ -102,9 +137,9 @@ check:
 	return rpath;
 }
 
-char *compose_abspath(ctrl_t *ctrl, char *path)
+_TPtr<char> compose_abspath(ctrl_t *ctrl, _TPtr<char> path)
 {
-	char *ptr;
+	_TPtr<char> ptr = NULL;
 	char cwd[sizeof(ctrl->cwd)];
 
 	if (path && path[0] == '/') {
