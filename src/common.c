@@ -72,7 +72,7 @@ _TPtr<char> compose_path(ctrl_t *ctrl, _TPtr<char> path)
     _TPtr<char> ptr = NULL;
 	struct stat st;
 
-	t_strlcpy(dir, StaticUncheckedToTStrAdaptor(ctrl->cwd, PATH_MAX), PATH_MAX);
+	t_strlcpy(dir, StaticUncheckedToTStrAdaptor(ctrl->cwd, strlen(ctrl->cwd)), PATH_MAX);
 	DBG("Compose path from cwd: %s, arg: %s", ctrl->cwd, path ?: "");
 	if (!path || !t_strlen(path))
 		goto check;
