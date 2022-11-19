@@ -148,17 +148,23 @@ Provided the library dependencies were installed in `/usr/local/`.  This
 `PKG_CONFIG_LIBDIR` trick may be needed on other GNU/Linux, or UNIX,
 distributions as well.
 
-CheckCBOX -->
-The configure goes as -->
+## CheckCBOX -->
+### The configure goes as -->
+```
 ./configure CC=<Checkcbox-clang> CFLAGS="-fPIC -fsanitize=address" LDFLAGS=-L<Checkcbox_LIBS> LIBS="-ldl -lstdc++ -lSBX_CON_LIB -lisc_lib_final -lTLIBDefs -static-libsan"
+```
 
+####  All about WASM Libs 
+--> checkcbox-uftpd/Checkcbox_LIBS --> that holds all of the WASM dependencies needed for uftpd to function 
+##### Below is the directory tree
 
-There is a directory --> checkcbox-uftpd/Checkcbox_LIBS --> that holds all of the WASM dependencies needed for uftpd to function 
-Below is the directory tree
 libisc_lib_final.a --> WASM Dependencies along with symbol definitions for WASM Sandboxed functions  
+
 libisc_lib_final.so  
+
 libSBX_CON_LIB.a --> Tainted STD Library support --> Does nothing WASM specific --> Just a wrapper to call std functions
-Example --> 
+
+#### Example --> 
 t_strncpy is defined as a symbol in the above library that just does this --> t_strncpy(args...) { strcpy(args...)}
 
 libTLIBDefs.a --> uftpd specific library symbol definitions -->
@@ -170,9 +176,10 @@ TaintedLibWrappers.c --> wrappers to calls to custom library functions
 TaintedLibWrappers.h 
 
 Compile the above with --> 
-1.) clang -c -I/usr/include/x86_64-linux-gnu/  -I/usr/include/ -I/usr/local/include/libite TaintedLibWrappers.c -o TaintedLibWrappers.o
-2.) ar rcs libTLIBDefs.a TaintedLibWrappers.o
-
+```
+clang -c -I/usr/include/x86_64-linux-gnu/  -I/usr/include/ -I/usr/local/include/libite TaintedLibWrappers.c -o TaintedLibWrappers.o
+ar rcs libTLIBDefs.a TaintedLibWrappers.o
+```
 Origin & References
 -------------------
 
