@@ -41,10 +41,7 @@
  *
  */
 
-_TLIB static size_t  t_strlcpy    (char* dst : itype(_TPtr<char>), const _TPtr<char> src, size_t siz)
-{
-return strlcpy((char *)dst, (const char *)src, siz);
-}
+_TLIB static size_t  t_strlcpy    (char* dst : itype(_TPtr<char>), const _TPtr<char> src, size_t siz);
 
 /* Send @len bytes data in @ctrl->buf */
 static int do_send(ctrl_t *ctrl, size_t len)

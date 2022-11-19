@@ -19,6 +19,7 @@
 #include "uftpd.h"
 #include <ctype.h>
 #include <arpa/ftp.h>
+#include <string.h>
 #ifdef HAVE_SYS_TIME_H
 # include <sys/time.h>
 #endif
@@ -40,44 +41,18 @@ static void do_LIST(uev_t *w, void *arg, int events);
 static void do_RETR(uev_t *w, void *arg, int events);
 static void do_STOR(uev_t *w, void *arg, int events);
 
-_TLIB static int t_stat(_TPtr<const char> path, struct stat *buf)
-{
-    return stat((const char*)path, buf);
-}
+_TLIB static int t_stat(_TPtr<const char> path, struct stat *buf);
 
-_TLIB static size_t  t_strlcpy    (char* dst : itype(_TPtr<char>), const _TPtr<char> src, size_t siz)
-{
-    return strlcpy((char *)dst, (const char *)src, siz);
-}
+_TLIB static size_t  t_strlcpy    (char* dst : itype(_TPtr<char>), const _TPtr<char> src, size_t siz);
 
-_TLIB static _TPtr<char> t_basename (_TPtr<char> __path)
-{
-return (_TPtr<char>)basename((char*)__path);
-}
+_TLIB static _TPtr<char> t_basename (_TPtr<char> __path);
 
-_TLIB static size_t  t_strlcat    (char* dst : itype(_TPtr<char>), const char* src: itype(_TPtr<const char>), size_t siz)
-{
-return strlcat((char*)dst, (const char*)src, siz);
-}
+_TLIB static size_t  t_strlcat    (char* dst : itype(_TPtr<char>), const char* src: itype(_TPtr<const char>), size_t siz);
 
-_TLIB static int t_access (_TPtr<const char> __name, int __type)
-{
-    return access((const char*)__name, __type);
-}
-_TLIB static ssize_t t_send (int __fd, const _TPtr<void> __buf, size_t __n, int __flags)
-{
-    return send(__fd, (const void *)__buf, __n, __flags);
-}
+_TLIB static int t_access (_TPtr<const char> __name, int __type);
+_TLIB static ssize_t t_send (int __fd, const _TPtr<void> __buf, size_t __n, int __flags);
 
-_TLIB static int t_string_valid(_TPtr<const char> str){
-    string_valid((const char*)str);
-}
-
-_TLIB static FILE * t_fopen(_TPtr<const char> restrict filename,
-            const char* restrict mode : itype(restrict _TNt_array_ptr<const char>))
-{
-    return fopen((const char*)filename, mode);
-}
+_TLIB static int t_string_valid(_TPtr<const char> str);
 
 _TLIB static int t_utimensat (int __fd, _TPtr<const char> __path,
                      const struct timespec __times[2],
@@ -86,10 +61,7 @@ _TLIB static int t_utimensat (int __fd, _TPtr<const char> __path,
     return utimensat(__fd, (const char*)__path, __times, __flags);
 }
 
-_TLIB static inline int t_string_case_compare(const char *a : itype(_TPtr<const char>), const char *b : itype(_TPtr<const char>))
-{
-    return strlen(a) == strlen(b) && !strcasecmp((const char *)a, (const char *)b);
-}
+_TLIB static inline int t_string_case_compare(const char *a : itype(_TPtr<const char>), const char *b : itype(_TPtr<const char>));
 
 static int is_cont(char *msg)
 {
@@ -396,14 +368,14 @@ static int do_abort(ctrl_t *ctrl)
 		ctrl->d = NULL;
 		ctrl->i = 0;
 
-		if (ctrl->file)
-			t_free(ctrl->file);
+		//if (ctrl->file)
+			//t_free(ctrl->file);
 		ctrl->file = NULL;
 	}
 
 	if (ctrl->file) {
 		uev_io_stop(&ctrl->data_watcher);
-		t_free(ctrl->file);
+		//t_free(ctrl->file);
 		ctrl->file = NULL;
 	}
 
@@ -755,7 +727,10 @@ static void do_MLST(ctrl_t *ctrl)
 	t_strlcpy(cwd, ctrl->file, PATH_MAX);
 	path = compose_path(ctrl, cwd);
 	if (!path)
-		goto abort;
+    {
+        printf("We are going to abort\n");
+        goto abort;
+    }
 
 	if (list_printf(ctrl, &buf[len], 512 -  len, path, t_basename(ctrl->file))) {
 	abort:
@@ -779,7 +754,10 @@ static void do_MLSD(ctrl_t *ctrl)
 	t_strlcpy(cwd, ctrl->file, PATH_MAX);
 	path = compose_path(ctrl, cwd);
 	if (!path)
-		goto abort;
+    {
+        printf("We are going to abort\n");
+        goto abort;
+    }
 
 	if (list_printf(ctrl, buf, 512, path, t_basename(path))) {
 	abort:
@@ -1161,7 +1139,7 @@ static void do_RETR(uev_t *w, void *arg, int events)
 		if (feof(ctrl->fp))
 			LOG("User %s from %s downloaded '%s'", ctrl->name, ctrl->clientaddr, ctrl->file);
 		else if (ferror(ctrl->fp))
-			ERR(0, "Error while reading %s", ctrl->file);
+			ERR(0, "Error while reading %s",  ctrl->file);
 		do_abort(ctrl);
 		send_msg(ctrl->sd, "226 Transfer complete.\r\n");
 		return;
@@ -1172,7 +1150,7 @@ static void do_RETR(uev_t *w, void *arg, int events)
 
 	gettimeofday(&tv, NULL);
 	if (tv.tv_sec - ctrl->tv.tv_sec > 3) {
-		DBG("Sending %zd bytes of %s to %s ...", num, ctrl->file, ctrl->clientaddr);
+		DBG("Sending %zd bytes of %s to %s ...", num,ctrl->file, ctrl->clientaddr);
 		ctrl->tv.tv_sec = tv.tv_sec;
 	}
 
@@ -1244,12 +1222,15 @@ static void handle_RETR(ctrl_t *ctrl, _TPtr<char> file)
 
 	path = compose_abspath(ctrl, file);
 	if (!path || t_stat(path, &st)) {
-		INFO("%s: RETR: invalid path to %s: %m", ctrl->clientaddr, file);
+        if (!path)
+            printf("PATH RETURNED NULL");
+
+		//INFO("%s: RETR: invalid path to %s: %m", ctrl->clientaddr, file);
 		send_msg(ctrl->sd, "550 No such file or directory.\r\n");
 		return;
 	}
 	if (!S_ISREG(st.st_mode)) {
-		LOG("%s: Failed opening '%s'. Not a regular file", ctrl->clientaddr, path);
+		LOG("%s: Failed opening '%s'. Not a regular file", ctrl->clientaddr, (char*)TaintedToCheckedStrAdaptor(file, t_strlen(path)));
 		send_msg(ctrl->sd, "550 Not a regular file.\r\n");
 		return;
 	}
@@ -1257,7 +1238,7 @@ static void handle_RETR(ctrl_t *ctrl, _TPtr<char> file)
 	fp = t_fopen(path, "rb");
 	if (!fp) {
 		if (errno != ENOENT)
-			ERR(errno, "Failed RETR %s for %s", path, ctrl->clientaddr);
+			ERR(errno, "Failed RETR %s for %s", (char*)TaintedToCheckedStrAdaptor(file, t_strlen(path)), ctrl->clientaddr);
 		send_msg(ctrl->sd, "451 Trouble to RETR file.\r\n");
 		return;
 	}
@@ -1505,29 +1486,29 @@ static void handle_REST(ctrl_t *ctrl, _TPtr<char> arg)
 
 static size_t num_nl(_TPtr<char> file)
 {
-	FILE *fp;
-	_TPtr<char> buf = TNtStrMalloc(80);
-	size_t len, num = 0;
+    FILE *fp;
+    char buf[80];
+    size_t len, num = 0;
 
-	fp = t_fopen(file, "r");
-	if (!fp)
-		return 0;
+    fp = t_fopen(file, "r");
+    if (!fp)
+        return 0;
 
-	do {
-		_TPtr<char> ptr = buf;
+    do {
+        char *ptr = buf;
 
-		len = t_fread(buf, 80, 80 - 1, fp);
-		if (len > 0) {
-			buf[len] = 0;
-			while ((ptr = t_strchr(ptr, '\n'))) {
-				ptr++;
-				num++;
-			}
-		}
-	} while (len > 0);
-	fclose(fp);
+        len = fread(buf, sizeof(char), sizeof(buf) - 1, fp);
+        if (len > 0) {
+            buf[len] = 0;
+            while ((ptr = strchr(ptr, '\n'))) {
+                ptr++;
+                num++;
+            }
+        }
+    } while (len > 0);
+    fclose(fp);
 
-	return num;
+    return num;
 }
 
 static void handle_SIZE(ctrl_t *ctrl, _TPtr<char> file)
@@ -1543,7 +1524,7 @@ static void handle_SIZE(ctrl_t *ctrl, _TPtr<char> file)
 		return;
 	}
 
-	DBG("SIZE %s", path);
+	DBG("SIZE %s", (const char*)TaintedToCheckedStrAdaptor(path, t_strlen(path)));
 
 	if (ctrl->type == TYPE_A)
 		extralen = num_nl(path);
@@ -1697,7 +1678,7 @@ static void child_exit(uev_t *w, void *arg, int events)
 	uev_exit(w->ctx);
 }
 
-static void read_client_command(uev_t *w, void *arg, int events)
+static void  read_client_command(uev_t *w, void *arg, int events)
 {
 	char *command, *argument;
 	ctrl_t *ctrl = (ctrl_t *)arg;
@@ -1727,7 +1708,12 @@ static void read_client_command(uev_t *w, void *arg, int events)
 
 	for (cmd = &supported[0]; cmd->command; cmd++) {
 		if (string_compare(command, cmd->command)) {
-			cmd->cb(ctrl, StaticUncheckedToTStrAdaptor(argument, strlen(argument)));
+            //print the argument here
+            printf("we have argument as %s", argument);
+            int argLen = 0;
+            if (argument!= NULL)
+                argLen = strlen(argument);
+			cmd->cb(ctrl, StaticUncheckedToTStrAdaptor(argument, argLen));
 			return;
 		}
 	}

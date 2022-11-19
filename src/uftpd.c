@@ -16,11 +16,7 @@
  */
 
 #include "uftpd.h"
-_TLIB static size_t  t_strlcpy    (_TPtr<char> dst, const _TPtr<char> src, size_t siz)
-{
-return strlcpy((char *)dst, (const char *)src, siz);
-}
-
+_TLIB static size_t  t_strlcpy    (_TPtr<char> dst, const _TPtr<char> src, size_t siz);
 
 /* Global daemon settings */
 char *prognm      = PACKAGE_NAME;

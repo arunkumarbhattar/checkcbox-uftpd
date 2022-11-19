@@ -56,6 +56,8 @@ void logit(int severity, const char *fmt, ...)
         va_end(args);
 }
 
+void t_logit(int severity, _TPtr<const char> fmt, ...);
+
 /**
  * Local Variables:
  *  indent-tabs-mode: t

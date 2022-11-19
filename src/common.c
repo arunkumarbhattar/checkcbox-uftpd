@@ -18,36 +18,15 @@
 #include "uftpd.h"
 #include <checkcbox_extensions.h>
 
-_TLIB static size_t  t_strlcat    (char* dst : itype(_TPtr<char>), const char* src: itype(_TPtr<const char>), size_t siz)
-{
-    return strlcat((char*)dst, (const char*)src, siz);
-}
-
-_TLIB static _TPtr<char> t_basename (_TPtr<char> __path)
-{
-    return (_TPtr<char>)basename((char*)__path);
-}
-
-_TLIB static _TPtr<char> t_dirname (_TPtr<char> __path)
-{
-    return (_TPtr<char>)dirname((char*)__path);
-}
+_TLIB static size_t  t_strlcat    (char* dst : itype(_TPtr<char>), const char* src: itype(_TPtr<const char>), size_t siz);
+_TLIB static _TPtr<char> t_basename (_TPtr<char> __path);
+_TLIB static _TPtr<char> t_dirname (_TPtr<char> __path);
 
 _TLIB static _TPtr<char> t_realpath (_TPtr<const char> __name,
-                       _TPtr<char> __resolved)
-{
-    return (_TPtr<char>)realpath((const char*)__name, (char*)__resolved);
-}
+                       _TPtr<char> __resolved);
+_TLIB static int t_stat(_TPtr<const char> path, struct stat *buf);
 
-_TLIB static int t_stat(_TPtr<const char> path, struct stat *buf)
-{
-    return stat((const char*)path, buf);
-}
-
-_TLIB static size_t  t_strlcpy    (char* dst : itype(_TPtr<char>), const _TPtr<char> src, size_t siz)
-{
-return strlcpy((char *)dst, (const char *)src, siz);
-}
+_TLIB static size_t  t_strlcpy    (char* dst : itype(_TPtr<char>), const _TPtr<char> src, size_t siz);
 
 int chrooted = 0;
 
@@ -72,8 +51,8 @@ _TPtr<char> compose_path(ctrl_t *ctrl, _TPtr<char> path)
     _TPtr<char> ptr = NULL;
 	struct stat st;
 
-	t_strlcpy(dir, StaticUncheckedToTStrAdaptor(ctrl->cwd, strlen(ctrl->cwd)), PATH_MAX);
-	DBG("Compose path from cwd: %s, arg: %s", ctrl->cwd, path ?: "");
+	t_strlcpy(dir, StaticUncheckedToTStrAdaptor(ctrl->cwd,PATH_MAX), PATH_MAX);
+	//DBG("Compose path from cwd: %s, arg: %s", ctrl->cwd, path ?: "");
 	if (!path || !t_strlen(path))
 		goto check;
 
@@ -90,12 +69,12 @@ check:
 	if (!chrooted) {
 		size_t len = strlen(home);
 
-//		DBG("Server path from CWD: %s", dir);
+		DBG("Server path from CWD: %s", (const char*)TaintedToCheckedStrAdaptor(dir, t_strlen(dir)));
 		if (len > 0 && home[len - 1] == '/')
 			len--;
 		t_memmove(dir + len, dir, t_strlen(dir) + 1);
 		t_memcpy(dir, home, len);
-//		DBG("Resulting non-chroot path: %s", dir);
+		DBG("Resulting non-chroot path: %s", (const char*)TaintedToCheckedStrAdaptor(dir, t_strlen(dir)));
 	}
 
 	/*
@@ -104,7 +83,10 @@ check:
 	 */
 	if (!t_stat(dir, &st) && S_ISDIR(st.st_mode)) {
 		if (!t_realpath(dir, rpath))
-			return NULL;
+        {
+            DBG("Exiting because we messed up in compose path\n");
+            return NULL;
+        }
 	} else {
 		/*
 		 * Check realpath() of directory containing the file, a
@@ -116,11 +98,11 @@ check:
 
 		t_memset(rpath, 0, PATH_MAX);
 		if (!t_realpath(ptr, rpath)) {
-			INFO("Failed realpath(%s): %m", ptr);
+			//INFO("Failed realpath(%s): %m", ptr);
 			return NULL;
 		}
 
-//		DBG("realpath(%s) => %s", ptr, rpath);
+		//DBG("realpath(%s) => %s", ptr, rpath);
 
 		if (rpath[1] != 0)
 			t_strlcat(rpath, "/", PATH_MAX);
@@ -128,12 +110,17 @@ check:
 	}
 
 	if (!chrooted && t_strncmp(rpath, home, strlen(home))) {
-		DBG("Failed non-chroot dir:%s vs home:%s", dir, home);
+        DBG("Exiting because Failed chroot\n");
+		//DBG("Failed non-chroot dir:%s vs home:%s", dir, home);
 		return NULL;
 	}
 
-	DBG("Final path to file: %s", rpath);
+	//DBG("Final path to file: %s", rpath);
 
+    if (!rpath)
+        DBG("Rpath is null");
+    else
+        DBG("Rpath is %s", rpath);
 	return rpath;
 }
 
