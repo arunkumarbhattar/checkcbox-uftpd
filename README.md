@@ -1,3 +1,36 @@
+## CheckCBOX -->
+### The configure goes as -->
+```
+./configure CC=<Checkcbox-clang> CFLAGS="-fPIC -fsanitize=address" LDFLAGS=-L<Checkcbox_LIBS> LIBS="-ldl -lstdc++ -lSBX_CON_LIB -lisc_lib_final -lTLIBDefs -static-libsan"
+```
+
+####  All about WASM Libs 
+--> checkcbox-uftpd/Checkcbox_LIBS --> that holds all of the WASM dependencies needed for uftpd to function 
+##### Below is the directory tree
+
+libisc_lib_final.a --> WASM Dependencies along with symbol definitions for WASM Sandboxed functions  
+
+libisc_lib_final.so  
+
+libSBX_CON_LIB.a --> Tainted STD Library support --> Does nothing WASM specific --> Just a wrapper to call std functions
+
+#### Example --> 
+t_strncpy is defined as a symbol in the above library that just does this --> t_strncpy(args...) { strcpy(args...)}
+
+libTLIBDefs.a --> uftpd specific library symbol definitions -->
+Like I said, if you have your own library functions(that do not add/remove/modify memory, ex strncpy) which you want to call with tainted pointers 
+--> You gotta define a wrapper function and define the symbol definition (indirected call to original function) in a seperate file and compile and link it as a static library 
+--> example, if you want to call myCustomStrncpy(args..) with tainted args --> (targs..) --> you can declare a tainted prototype as --> _T_myCustomStrncpy(targs) and define it in a seperate file (like the ones below) --> compile and link seperately
+
+TaintedLibWrappers.c --> wrappers to calls to custom library functions 
+TaintedLibWrappers.h 
+
+Compile the above with --> 
+```
+clang -c -I/usr/include/x86_64-linux-gnu/  -I/usr/include/ -I/usr/local/include/libite TaintedLibWrappers.c -o TaintedLibWrappers.o
+ar rcs libTLIBDefs.a TaintedLibWrappers.o
+```
+
 No Nonsense FTP/TFTP Server
 ===========================
 [![License Badge][]][License] [![GitHub Status][]][GitHub] [![Coverity Status][]][Coverity Scan]
@@ -148,38 +181,7 @@ Provided the library dependencies were installed in `/usr/local/`.  This
 `PKG_CONFIG_LIBDIR` trick may be needed on other GNU/Linux, or UNIX,
 distributions as well.
 
-## CheckCBOX -->
-### The configure goes as -->
-```
-./configure CC=<Checkcbox-clang> CFLAGS="-fPIC -fsanitize=address" LDFLAGS=-L<Checkcbox_LIBS> LIBS="-ldl -lstdc++ -lSBX_CON_LIB -lisc_lib_final -lTLIBDefs -static-libsan"
-```
 
-####  All about WASM Libs 
---> checkcbox-uftpd/Checkcbox_LIBS --> that holds all of the WASM dependencies needed for uftpd to function 
-##### Below is the directory tree
-
-libisc_lib_final.a --> WASM Dependencies along with symbol definitions for WASM Sandboxed functions  
-
-libisc_lib_final.so  
-
-libSBX_CON_LIB.a --> Tainted STD Library support --> Does nothing WASM specific --> Just a wrapper to call std functions
-
-#### Example --> 
-t_strncpy is defined as a symbol in the above library that just does this --> t_strncpy(args...) { strcpy(args...)}
-
-libTLIBDefs.a --> uftpd specific library symbol definitions -->
-Like I said, if you have your own library functions(that do not add/remove/modify memory, ex strncpy) which you want to call with tainted pointers 
---> You gotta define a wrapper function and define the symbol definition (indirected call to original function) in a seperate file and compile and link it as a static library 
---> example, if you want to call myCustomStrncpy(args..) with tainted args --> (targs..) --> you can declare a tainted prototype as --> _T_myCustomStrncpy(targs) and define it in a seperate file (like the ones below) --> compile and link seperately
-
-TaintedLibWrappers.c --> wrappers to calls to custom library functions 
-TaintedLibWrappers.h 
-
-Compile the above with --> 
-```
-clang -c -I/usr/include/x86_64-linux-gnu/  -I/usr/include/ -I/usr/local/include/libite TaintedLibWrappers.c -o TaintedLibWrappers.o
-ar rcs libTLIBDefs.a TaintedLibWrappers.o
-```
 Origin & References
 -------------------
 
