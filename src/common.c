@@ -41,9 +41,9 @@ int chrooted = 0;
  *
  * Forced dir ------> /srv/ftp/etc
  */
-_TPtr<char> compose_path(ctrl_t *ctrl, _TPtr<char> path)
+_Callback _TPtr<char> _T_compose_path(_TPtr<char> ctrl_cwd, _TPtr<char> path)
 {
-	_TPtr<char> rpath = (_TPtr<char>)TNtStrMalloc(PATH_MAX);
+    _TPtr<char> rpath = (_TPtr<char>)TNtStrMalloc(PATH_MAX);
 	_TPtr<char> dir = (_TPtr<char>)TNtStrMalloc(PATH_MAX);
     //set all the memory to 0
     t_memset(dir, 0, PATH_MAX);
@@ -51,7 +51,7 @@ _TPtr<char> compose_path(ctrl_t *ctrl, _TPtr<char> path)
     _TPtr<char> ptr = NULL;
 	struct stat st;
 
-	t_strlcpy(dir, StaticUncheckedToTStrAdaptor(ctrl->cwd,PATH_MAX), PATH_MAX);
+	t_strlcpy(dir, ctrl_cwd, PATH_MAX);
 	//DBG("Compose path from cwd: %s, arg: %s", ctrl->cwd, path ?: "");
 	if (!path || !t_strlen(path))
 		goto check;
@@ -120,22 +120,52 @@ check:
 	return rpath;
 }
 
+_TPtr<char> compose_path(ctrl_t *ctrl, _TPtr<char> path) {
+    return _T_compose_path(StaticUncheckedToTStrAdaptor(ctrl->cwd, PATH_MAX), path);
+}
+
+//_TPtr<char> compose_abspath(ctrl_t *ctrl, _TPtr<char> path)
+//{
+//	_TPtr<char> ptr = NULL;
+//	char cwd[sizeof(ctrl->cwd)];
+//
+//	if (path && path[0] == '/') {
+//		strlcpy(cwd, ctrl->cwd, sizeof(cwd));
+//		memset(ctrl->cwd, 0, sizeof(ctrl->cwd));
+//	}
+//
+//	ptr = compose_path(ctrl, path);
+//
+//	if (path && path[0] == '/')
+//		strlcpy(ctrl->cwd, cwd, sizeof(ctrl->cwd));
+//
+//	return ptr;
+//}
+_TLIB unsigned int _T_compose_path_trampoline_2(unsigned sandbox,
+                                              unsigned int arg_1,
+                                              unsigned int arg_2) {
+    printf("GOD IS REAL!!!");
+    return c_fetch_pointer_offset(
+            (void *)_T_compose_path((_TPtr<char>)arg_1, (_TPtr<char>)arg_2));
+}
+
 _TPtr<char> compose_abspath(ctrl_t *ctrl, _TPtr<char> path)
 {
-	_TPtr<char> ptr = NULL;
-	char cwd[sizeof(ctrl->cwd)];
+    int cwdSz = 0;
+    if (ctrl->cwd != NULL)
+        cwdSz = strlen(ctrl->cwd);
+    return _T_compose_abspath(path, StaticUncheckedToTStrAdaptor(ctrl->cwd, cwdSz), PATH_MAX);
+}
 
-	if (path && path[0] == '/') {
-		strlcpy(cwd, ctrl->cwd, sizeof(cwd));
-		memset(ctrl->cwd, 0, sizeof(ctrl->cwd));
-	}
 
-	ptr = compose_path(ctrl, path);
-
-	if (path && path[0] == '/')
-		strlcpy(ctrl->cwd, cwd, sizeof(ctrl->cwd));
-
-	return ptr;
+_TLIB _TPtr<char> _T_compose_abspath(_TPtr<char> path, _TPtr<char> ctrl_cwd,int sizeof_ctrl_cwd)
+{
+    int ret_param_types[] = {0, 0, 0};
+    printf("Entering into the WASM SANDBOX REGION");
+    return (_TPtr<char>)w2c__T_compose_abspath(c_fetch_sandbox_address(), (int)path, (int)ctrl_cwd, sizeof_ctrl_cwd,sbx_register_callback(_T_compose_path_trampoline_2, 2 // 2 args
+            ,
+                                                                                                                                                              1 // 1 return value
+            , ret_param_types));
 }
 
 int set_nonblock(int fd)
