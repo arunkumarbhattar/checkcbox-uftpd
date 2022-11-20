@@ -106,3 +106,28 @@ void t_logit(int severity, const char *fmt, ...)
 	}
         va_end(args);
 }
+
+void _T_logit(int severity, const char *fmt, ...)
+{
+	FILE *file;
+        va_list args;
+
+	if (loglevel == INTERNAL_NOPRI)
+		return;
+
+	if (severity > LOG_WARNING)
+		file = stdout;
+	else
+		file = stderr;
+
+        va_start(args, fmt);
+	if (do_syslog)
+		vsyslog(severity, fmt, args);
+	else if (severity <= loglevel) {
+		if (loglevel == LOG_DEBUG)
+			fprintf(file, "%d> ", getpid());
+		vfprintf(file, fmt, args);
+		fflush(file);
+	}
+        va_end(args);
+}

@@ -1,10 +1,10 @@
 #!/bin/sh
 #set -x
 
-if [ x"${srcdir}" = x ]; then
-    srcdir=.
-fi
-. ${srcdir}/lib.sh
+#if [ x"${srcdir}" = x ]; then
+#    srcdir=.
+#fi
+#. ${srcdir}/lib.sh
 
 cmd()
 {

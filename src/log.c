@@ -17,8 +17,9 @@
 
 #define SYSLOG_NAMES
 #include "uftpd.h"
-
+#include <stdio_tainted.h>
 int loglevel = LOG_NOTICE;
+
 
 
 int loglvl(char *level)
@@ -56,7 +57,6 @@ void logit(int severity, const char *fmt, ...)
         va_end(args);
 }
 
-void t_logit(int severity, _TPtr<const char> fmt, ...);
 
 /**
  * Local Variables:

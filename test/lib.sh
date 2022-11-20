@@ -105,7 +105,7 @@ setup()
 
 	cp /etc/passwd "${DIR}/testfile.txt"
 
-	"${bindir}/uftpd" "$DIR" -p "$DIR/pid" >"$DIR/log"
+	"${bindir}/uftpd" "$DIR" -p "$DIR/pid" -n -l debug>"$DIR/log"
 	cd "${CDIR}" || exit 1
 
 	sleep 1

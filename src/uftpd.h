@@ -86,6 +86,16 @@
 			logit(severity, fmt "%s", ##args,		\
 			      do_syslog ? "" : "\n");			\
 	} while (0)
+#define _T_LOGIT(severity, code, fmt, args...)				\
+	do {								\
+		if (code)						\
+			_T_logit(severity, fmt ". Error %d: %s%s",		\
+			      ##args, code, strerror(code),		\
+			      do_syslog ? "" : "\n");			\
+		else							\
+			_T_logit(severity, fmt "%s", ##args,		\
+			      do_syslog ? "" : "\n");			\
+	} while (0)
 #define ERR(code, fmt, args...)  LOGIT(LOG_ERR, code, fmt, ##args)
 #define WARN(code, fmt, args...) LOGIT(LOG_WARNING, code, fmt, ##args)
 #define LOG(fmt, args...)        LOGIT(LOG_NOTICE, 0, fmt, ##args)
@@ -137,7 +147,7 @@ typedef struct {
 	char     facts[10];
 	pend_t   pending; 	/* Pending op: LIST, RETR, STOR */
 	char     list_mode;	/* Current LIST mode */
-	_TPtr<char>   file;	        /* Current file name to fetch */
+	char*   file;	        /* Current file name to fetch */ // The reason why this structure cannot have tainted members --> is because its filled in from uev_run (shared library sitting somewhere else)
 	off_t    offset;	/* Offset/block in current file, for REST/WRQ */
 	FILE    *fp;		/* Current file in operation */
 	int      i;		/* i of d_num in 'd' */

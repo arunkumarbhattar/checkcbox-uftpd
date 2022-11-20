@@ -43,7 +43,7 @@ static void do_STOR(uev_t *w, void *arg, int events);
 
 _TLIB static int t_stat(_TPtr<const char> path, struct stat *buf);
 
-_TLIB static size_t  t_strlcpy    (char* dst : itype(_TPtr<char>), const _TPtr<char> src, size_t siz);
+_TLIB static size_t  t_strlcpy    (char* dst : itype(_TPtr<char>), char* src : itype(_TPtr<char>) , size_t siz);
 
 _TLIB static _TPtr<char> t_basename (_TPtr<char> __path);
 
@@ -162,7 +162,7 @@ static int t_send_msg(int sd, _TPtr<char> msg)
         n += result;
     }
 
-    DBG("Sent: %s%s", t_is_cont(msg) ? "\n" : "", msg);
+    DBG("Sent: %s%s", t_is_cont(msg) ? "\n" : "", (char*)c_fetch_pointer_from_offset((int)msg));
 
     return 0;
 }
@@ -505,9 +505,9 @@ static void handle_CWD(ctrl_t *ctrl, _TPtr<char> path)
 	if (!chrooted)
 		dir += strlen(home);
 
-	snprintf(ctrl->cwd, sizeof(ctrl->cwd), "%s", dir);
+	t_snprintf(ctrl->cwd, sizeof(ctrl->cwd), "%s", dir);
 	if (ctrl->cwd[0] == 0)
-		snprintf(ctrl->cwd, sizeof(ctrl->cwd), "/");
+		t_snprintf(ctrl->cwd, sizeof(ctrl->cwd), "/");
 
 done:
 	DBG("New CWD: '%s'", ctrl->cwd);
@@ -731,8 +731,11 @@ static void do_MLST(ctrl_t *ctrl)
         printf("We are going to abort\n");
         goto abort;
     }
-
-	if (list_printf(ctrl, &buf[len], 512 -  len, path, t_basename(ctrl->file))) {
+    char* basen = basename(ctrl->file);
+    int basenLen = 0;
+    if (basen != NULL)
+        basenLen = strlen(basen);
+	if (list_printf(ctrl, &buf[len], 512 -  len, path, StaticUncheckedToTStrAdaptor(basen, basenLen))) {
 	abort:
 		do_abort(ctrl);
 		send_msg(ctrl->sd, "550 No such file or directory.\r\n");
@@ -816,7 +819,7 @@ static void do_LIST(uev_t *w, void *arg, int events)
 		if (!strcmp(name, ".") || !strcmp(name, ".."))
 			continue;
 
-		len = t_strlen(ctrl->file);
+		len = strlen(ctrl->file);
 		t_snprintf(cwd, PATH_MAX, StaticUncheckedToTStrAdaptor("%s%s%s", strlen("%s%s%s")), ctrl->file,
 			 ctrl->file[len > 0 ? len - 1 : len] == '/' ? "" : "/", name);
 
@@ -830,7 +833,10 @@ static void do_LIST(uev_t *w, void *arg, int events)
 		if (list_printf(ctrl, buf, BUFFER_SIZE, path, StaticUncheckedToTStrAdaptor(name, strlen(name))))
 			goto fail;
 
-		DBG("LIST %s", buf);
+        int bufLen = 0;
+        if (buf != NULL)
+            bufLen = t_strlen(buf);
+		t_printf("LIST %s",buf);
 
 		bytes = t_send(ctrl->data_sd, buf, t_strlen(buf), 0);
 		if (-1 == bytes) {
@@ -903,24 +909,27 @@ static void list(ctrl_t *ctrl, _TPtr<char> arg, int mode)
 	else
 		path = compose_path(ctrl, arg);
 	if (!path) {
-		INFO("%s: %s: invalid path to %s: %m", ctrl->clientaddr, mode2op(mode), arg);
+		INFO("%s: %s: invalid path to %s: %m", ctrl->clientaddr, mode2op(mode), TaintedToCheckedStrAdaptor(arg, t_strlen(arg)));
 		send_msg(ctrl->sd, "550 No such file or directory.\r\n");
 		return;
 	}
 
 	ctrl->list_mode = mode;
-	ctrl->file = t_strdup(arg ? arg : "");
+//    int argLen = (arg == NULL)? 0 : t_strlen(arg);
+//    char* checkedArg = (char*)malloc(argLen);
+//    t_strncpy(checkedArg, t_strdup(arg ? arg : ""), argLen);
+	ctrl->file =  (char*)t_strdup(arg ? arg : "");
 	ctrl->i = 0;
 	ctrl->d_num = scandir((const char*)TaintedToCheckedStrAdaptor(path, t_strlen(path)), &ctrl->d, NULL, alphasort);
 	if (ctrl->d_num == -1) {
 		if (t_access(path, R_OK)) {
 			send_msg(ctrl->sd, "550 No such file or directory.\r\n");
-			DBG("Failed reading directory '%s': %s", path, strerror(errno));
+			DBG("Failed reading directory '%s': %s", TaintedToCheckedStrAdaptor(path, t_strlen(path)), strerror(errno));
 			return;
 		}
 	}
 
-	DBG("Reading directory %s ... %d number of entries", path, ctrl->d_num);
+	DBG("Reading directory %s ... %d number of entries", TaintedToCheckedStrAdaptor(path, t_strlen(path)), ctrl->d_num);
 	if (ctrl->data_sd > -1) {
 		send_msg(ctrl->sd, "125 Data connection already open; transfer starting.\r\n");
 		uev_io_init(ctrl->ctx, &ctrl->data_watcher, do_LIST, ctrl, ctrl->data_sd, UEV_WRITE);
@@ -928,6 +937,7 @@ static void list(ctrl_t *ctrl, _TPtr<char> arg, int mode)
 	}
 
 	do_PORT(ctrl, PENDING_LIST);
+    //free(checkedArg);
 }
 
 static void handle_LIST(ctrl_t *ctrl, _TPtr<char> arg)
@@ -1244,7 +1254,10 @@ static void handle_RETR(ctrl_t *ctrl, _TPtr<char> file)
 	}
 
 	ctrl->fp = fp;
-	ctrl->file = t_strdup(file);
+//    int argLen = (file == NULL)? 0 : t_strlen(file);
+//    char* checkedArg = (char*)malloc(argLen);
+//    t_strncpy(checkedArg, t_strdup(file ? file : ""), argLen);
+	ctrl->file = (char*)t_strdup(file ? file : "");
 
 	if (ctrl->data_sd > -1) {
 		if (ctrl->offset) {
@@ -1258,10 +1271,12 @@ static void handle_RETR(ctrl_t *ctrl, _TPtr<char> file)
 
 		send_msg(ctrl->sd, "125 Data connection already open; transfer starting.\r\n");
 		uev_io_init(ctrl->ctx, &ctrl->data_watcher, do_RETR, ctrl, ctrl->data_sd, UEV_WRITE);
-		return;
+ //       free(checkedArg);
+        return;
 	}
 
 	do_PORT(ctrl, PENDING_RETR);
+   // free(checkedArg);
 }
 
 /* Request to set mtime, ncftp does this */
@@ -1397,7 +1412,10 @@ static void handle_STOR(ctrl_t *ctrl, _TPtr<char> file)
 	}
 
 	ctrl->fp = fp;
-	ctrl->file = t_strdup(file);
+//    int argLen = (file == NULL)? 0 : t_strlen(file);
+//    char* checkedArg = (char*)malloc(argLen);
+//    t_strncpy(checkedArg, t_strdup(file ? file : ""), argLen);
+	ctrl->file =  (char*)t_strdup(file ? file : "");
 
 	if (ctrl->data_sd > -1) {
 		if (ctrl->offset)
@@ -1410,10 +1428,12 @@ static void handle_STOR(ctrl_t *ctrl, _TPtr<char> file)
 
 		send_msg(ctrl->sd, "125 Data connection already open; transfer starting.\r\n");
 		uev_io_init(ctrl->ctx, &ctrl->data_watcher, do_STOR, ctrl, ctrl->data_sd, UEV_READ);
-		return;
+  //      free(checkedArg);
+        return;
 	}
 
 	do_PORT(ctrl, PENDING_STOR);
+    //free(checkedArg);
 }
 
 static void handle_DELE(ctrl_t *ctrl, _TPtr<char> file)

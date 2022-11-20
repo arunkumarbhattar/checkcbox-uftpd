@@ -172,8 +172,7 @@ static int parse_RWRQ(ctrl_t *ctrl, _TPtr<char> buf, size_t len)
 {
 	size_t opt_len = t_strlen(buf) + 1;
 
-	/* First opt is always filename */
-	ctrl->file = t_strdup(buf);
+	ctrl->file = (char*)t_strdup(buf);
 	if (!ctrl->file)
 		return send_ERROR(ctrl, EUNDEF, NULL);
 
@@ -205,8 +204,9 @@ static int parse_RWRQ(ctrl_t *ctrl, _TPtr<char> buf, size_t len)
 	} while (len);
 
 	if (!ctrl->tftp_options)
-		return 0;
-
+    {
+        return 0;
+    }
 	return send_OACK(ctrl);
 }
 
@@ -214,7 +214,7 @@ static int handle_RRQ(ctrl_t *ctrl)
 {
 	_TPtr<char> path = NULL;
 
-	path = compose_path(ctrl, ctrl->file);
+	path = compose_path(ctrl, StaticUncheckedToTStrAdaptor(ctrl->file, strlen(ctrl->file)));
 	if (!path) {
 		ERR(errno, "%s: Invalid path to file %s", ctrl->clientaddr, ctrl->file);
 		return send_ERROR(ctrl, ENOTFOUND, NULL);
@@ -222,7 +222,7 @@ static int handle_RRQ(ctrl_t *ctrl)
 
 	ctrl->fp = t_fopen(path, "r");
 	if (!ctrl->fp) {
-		ERR(errno, "%s: Failed opening '%s'", ctrl->clientaddr, path);
+		ERR(errno, "%s: Failed opening '%s'", ctrl->clientaddr, (const char*)TaintedToCheckedStrAdaptor(path, t_strlen(path)));
 		return send_ERROR(ctrl, ENOTFOUND, NULL);
 	}
 
@@ -233,7 +233,7 @@ static int handle_WRQ(ctrl_t *ctrl)
 {
 	_TPtr<char> path = NULL;
 
-	path = compose_path(ctrl, ctrl->file);
+	path = compose_path(ctrl, StaticUncheckedToTStrAdaptor(ctrl->file, strlen(ctrl->file)));
 	if (!path) {
 		ERR(errno, "%s: Invalid path to file %s", ctrl->clientaddr, ctrl->file);
 		return send_ERROR(ctrl, ENOTFOUND, NULL);
@@ -339,13 +339,14 @@ static void read_client_command(uev_t *w, void *arg, int events)
 		LOG("tftp RRQ '%s' from %s:%d", ctrl->file, ctrl->clientaddr, port);
 		active = handle_RRQ(ctrl);
         t_free(TaintedTh_Stuff);
-		t_free(ctrl->file);
+		free(ctrl->file);
 		break;
 
 	case WRQ:
 		len -= ctrl->th->th_stuff - ctrl->buf;
 
         TaintedTh_Stuff = TNtStrMalloc(len);
+        t_strncpy(TaintedTh_Stuff, ctrl->th->th_stuff, len);
 		if (parse_RWRQ(ctrl, TaintedTh_Stuff, len)) {
 			ERR(errno, "Failed parsing TFTP WRQ");
 			active = 0;
@@ -355,7 +356,7 @@ static void read_client_command(uev_t *w, void *arg, int events)
 		LOG("tftp WRQ '%s' from %s:%d", ctrl->file, ctrl->clientaddr, port);
 		handle_WRQ(ctrl);
         t_free(TaintedTh_Stuff);
-		t_free(ctrl->file);
+		free(ctrl->file);
 		break;
 
 	case DATA:		/* Received data after WRQ */

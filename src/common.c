@@ -117,10 +117,6 @@ check:
 
 	//DBG("Final path to file: %s", rpath);
 
-    if (!rpath)
-        DBG("Rpath is null");
-    else
-        DBG("Rpath is %s", rpath);
 	return rpath;
 }
 
