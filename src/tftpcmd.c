@@ -213,19 +213,22 @@ static int parse_RWRQ(ctrl_t *ctrl, _TPtr<char> buf, size_t len)
 static int handle_RRQ(ctrl_t *ctrl)
 {
 	_TPtr<char> path = NULL;
-
-	path = compose_path(ctrl, StaticUncheckedToTStrAdaptor(ctrl->file, strlen(ctrl->file)));
+    _TPtr<char> TaintedFileName = NULL;
+    TaintedFileName = StaticUncheckedToTStrAdaptor(ctrl->file, strlen(ctrl->file));
+	path = compose_path(ctrl, TaintedFileName);
 	if (!path) {
+        t_free(TaintedFileName);
 		ERR(errno, "%s: Invalid path to file %s", ctrl->clientaddr, ctrl->file);
 		return send_ERROR(ctrl, ENOTFOUND, NULL);
 	}
 
 	ctrl->fp = t_fopen(path, "r");
 	if (!ctrl->fp) {
+        t_free(TaintedFileName);
 		ERR(errno, "%s: Failed opening '%s'", ctrl->clientaddr, (const char*)TaintedToCheckedStrAdaptor(path, t_strlen(path)));
 		return send_ERROR(ctrl, ENOTFOUND, NULL);
 	}
-
+    t_free(TaintedFileName);
 	return !send_DATA(ctrl, 0);
 }
 

@@ -136,6 +136,8 @@ static int send_msg(int sd, char *msg)
 	return 0;
 }
 
+
+
 static int t_send_msg(int sd, _TPtr<char> msg)
 {
     int n = 0;
@@ -514,9 +516,37 @@ done:
 	send_msg(ctrl->sd, "250 OK\r\n");
 }
 
+_TLIB unsigned int _T_compose_path_trampoline(unsigned sandbox,
+                                             unsigned int arg_1,
+                                             unsigned int arg_2) {
+    return c_fetch_pointer_offset(
+            (void *)_T_compose_path((_TPtr<char>)arg_1, (_TPtr<char>)arg_2));
+}
+
+_Tainted void _T_handle_CWD(_TPtr<char> home_, _TPtr<char> ctrl_cwd, _TPtr<char> path, int ctrl_sd, _TPtr<char> ctrl_client_addr, int sizeof_ctrl_cwd, int chrooted , _TPtr<_TPtr<char>(_TPtr<char>, _TPtr<char>)>)
+{
+    int ret_param_types[] = {0, 0, 0};
+    printf("Entering into the WASM SANDBOX REGION");
+    return w2c__T_handle_CWD(c_fetch_sandbox_address(), (int)home_, (int)ctrl_cwd, (int)path, ctrl_sd, (int)ctrl_client_addr, sizeof_ctrl_cwd, chrooted, sbx_register_callback(_T_compose_path_trampoline, 2 // 2 args
+                                                                                                                                                             ,
+                                                                                                                                                             1 // 1 return value
+                                                                                                                                                             , ret_param_types));
+}
+
 static void handle_CDUP(ctrl_t *ctrl, _TPtr<char> path)
 {
-	handle_CWD(ctrl, StaticUncheckedToTStrAdaptor("..", strlen("..")));
+	//handle_CWD(ctrl, StaticUncheckedToTStrAdaptor("..", strlen("..")));
+    _TPtr<char>TaintedHomeStr = NULL;
+    _TPtr<char>CtrlCwdStr = NULL;
+    _TPtr<char>ClientAddrStr = NULL;
+    TaintedHomeStr = StaticUncheckedToTStrAdaptor(home, strlen(home));
+    CtrlCwdStr = StaticUncheckedToTStrAdaptor(ctrl->cwd, strlen(ctrl->cwd));
+    ClientAddrStr = StaticUncheckedToTStrAdaptor(ctrl->clientaddr, INET_ADDRSTRLEN);
+    _T_handle_CWD(TaintedHomeStr, CtrlCwdStr, path,
+                  ctrl->sd, ClientAddrStr, PATH_MAX, chrooted, &_T_compose_path);
+    t_free(TaintedHomeStr);
+    t_free(CtrlCwdStr);
+    t_free(ClientAddrStr);
 }
 
 static void handle_PORT(ctrl_t *ctrl, _TPtr<char> str)
@@ -779,7 +809,8 @@ static void do_LIST(uev_t *w, void *arg, int events)
 {
 	ctrl_t *ctrl = (ctrl_t *)arg;
 	struct timeval tv;
-	ssize_t bytes;
+    _TPtr<char> TaintedName = NULL;
+    ssize_t bytes;
 	_TPtr<char> buf = TNtStrMalloc(BUFFER_SIZE);
     t_memset(buf, 0, BUFFER_SIZE);
 
@@ -826,11 +857,13 @@ static void do_LIST(uev_t *w, void *arg, int events)
 		path = compose_path(ctrl, cwd);
 		if (!path) {
 		fail:
+            t_free(TaintedName);
 			INFO("%s: LIST: Failed reading status for %s: %m", ctrl->clientaddr, path ? path : name);
 			continue;
 		}
 
-		if (list_printf(ctrl, buf, BUFFER_SIZE, path, StaticUncheckedToTStrAdaptor(name, strlen(name))))
+        TaintedName = StaticUncheckedToTStrAdaptor(name, strlen(name));
+		if (list_printf(ctrl, buf, BUFFER_SIZE, path, TaintedName))
 			goto fail;
 
         int bufLen = 0;

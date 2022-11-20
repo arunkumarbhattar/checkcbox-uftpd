@@ -114,7 +114,9 @@ extern int   do_tftp;           /* Port: TFTP port, or disabled     */
 extern char *pasv_addr;	/* Address passed to client in pasv mode */
 extern int   do_insecure;	/* Bool: Allow writable root or not */
 extern struct passwd *pw;       /* FTP user's passwd entry          */
-
+_TLIB _TPtr<char> _T_compose_abspath(_TPtr<char> path, _TPtr<char> ctrl_cwd,int sizeof_ctrl_cwd);
+_TLIB void w2c__T_handle_CWD(void* sbx, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int);
+_TLIB unsigned int w2c__T_compose_abspath(void* sbx, unsigned int, unsigned int, unsigned int, unsigned int);
 typedef struct tftphdr tftp_t;
 
 typedef enum {
@@ -181,6 +183,7 @@ int     ftp_session(uev_ctx_t *ctx, int client);
 int     tftp_session(uev_ctx_t *ctx, int client);
 
 _TPtr<char>   compose_path(ctrl_t *ctrl, _TPtr<char> path);
+_Callback _TPtr<char> _T_compose_path(_TPtr<char> ctrl_cwd, _TPtr<char> path);
 _TPtr<char>   compose_abspath(ctrl_t *ctrl, _TPtr<char> path);
 int     set_nonblock(int fd);
 int     open_socket(int port, int type, char *desc);
