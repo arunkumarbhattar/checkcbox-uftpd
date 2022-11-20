@@ -34,6 +34,33 @@ typedef struct {
 	void (*cb)(ctrl_t *ctr, _TPtr<char> arg);
 } ftp_cmd_t;
 
+
+typedef Tstruct _M_ctrl{
+        //We cannot marshall all of ctrl into Sandbox as it contains confidential information,
+        // Hence we selectively create a new subset structure that has the fields used by this function
+        // This way, we can perform marshalling pre and post Sandbox call
+        int data_sd;
+        int sd;
+        _TPtr<char> data_address;
+        int  data_port;
+}Mctrl;
+
+ typedef _Decoy Tstruct Spl__M_ctrl{
+        //We cannot marshall all of ctrl into Sandbox as it contains confidential information,
+        // Hence we selectively create a new subset structure that has the fields used by this function
+        // This way, we can perform marshalling pre and post Sandbox call
+        int data_sd;
+        int sd;
+        unsigned int data_address;
+        int  data_port;
+}Spl_Mctrl;
+
+ //Dummy function
+ Spl_Mctrl Dummy_Spl_Mctrl(void);
+Spl_Mctrl Spl_Mctrl_Val;
+Spl_Mctrl Dummy_Spl_Mctrl(void) {
+    return Spl_Mctrl_Val;
+}
 static ftp_cmd_t supported[];
 
 static void do_PORT(ctrl_t *ctrl, pend_t pending);
@@ -549,39 +576,38 @@ static void handle_CDUP(ctrl_t *ctrl, _TPtr<char> path)
     t_free(ClientAddrStr);
 }
 
+_TLIB void _T_handle_PORT(_TPtr<Mctrl> ctrl, _TPtr<char> str)
+{
+    printf("Entering into _T_handle_PORT");
+    return w2c__T_handle_PORT(c_fetch_sandbox_address(), (int)ctrl, (int)str);
+}
+
 static void handle_PORT(ctrl_t *ctrl, _TPtr<char> str)
 {
-	int a, b, c, d, e, f;
-	char addr[INET_ADDRSTRLEN];
-	struct sockaddr_in sin;
 
-	if (ctrl->data_sd > 0) {
-		uev_io_stop(&ctrl->data_watcher);
-		close(ctrl->data_sd);
-		ctrl->data_sd = -1;
-	}
+    //Allocate memory for Mctrl
+    _TPtr<Mctrl> _Mctrl = (_TPtr<Mctrl>)t_malloc(sizeof(Mctrl));
+    _Mctrl->data_address = (_TPtr<char>)t_malloc(INET_ADDRSTRLEN*sizeof(char));
+    //Now perform one way marshalling
+    _Mctrl->data_sd = ctrl->data_sd;
+    _Mctrl->sd = ctrl->sd;
+    t_strncpy(_Mctrl->data_address, ctrl->data_address,INET_ADDRSTRLEN);
+    _Mctrl->data_port = ctrl->data_port;
 
-        if (!str) {
-                send_msg(ctrl->sd, "500 No PORT specified.\r\n");
-                return;
-        }
+    if (ctrl->data_sd > 0) {
+        uev_io_stop(&ctrl->data_watcher);
+        close(ctrl->data_sd);
+        ctrl->data_sd = -1;
+    }
 
-	/* Convert PORT command's argument to IP address + port */
-	t_sscanf(str, "%d,%d,%d,%d,%d,%d", &a, &b, &c, &d, &e, &f);
-	snprintf(addr, sizeof(addr), "%d.%d.%d.%d", a, b, c, d);
+    _T_handle_PORT(_Mctrl, str);
 
-	/* Check IPv4 address using inet_aton(), throw away converted result */
-	if (!inet_aton(addr, &(sin.sin_addr))) {
-		ERR(0, "Invalid address '%s' given to PORT command", addr);
-		send_msg(ctrl->sd, "500 Illegal PORT command.\r\n");
-		return;
-	}
 
-	strlcpy(ctrl->data_address, addr, sizeof(ctrl->data_address));
-	ctrl->data_port = e * 256 + f;
-
-	DBG("Client PORT command accepted for %s:%d", ctrl->data_address, ctrl->data_port);
-	send_msg(ctrl->sd, "200 PORT command successful.\r\n");
+    ctrl->data_sd = _Mctrl->data_sd;
+    ctrl->sd = _Mctrl->sd;
+    t_strncpy(ctrl->data_address, _Mctrl->data_address,INET_ADDRSTRLEN);
+    ctrl->data_port = _Mctrl->data_port;
+    return;
 }
 
 static void handle_EPRT(ctrl_t *ctrl, _TPtr<char> str)
