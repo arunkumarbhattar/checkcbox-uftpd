@@ -576,7 +576,7 @@ static void handle_CDUP(ctrl_t *ctrl, _TPtr<char> path)
     t_free(ClientAddrStr);
 }
 
-_TLIB void _T_handle_PORT(_TPtr<Mctrl> ctrl, _TPtr<char> str)
+_Tainted void _T_handle_PORT(_TPtr<Mctrl> ctrl, _TPtr<char> str)
 {
     printf("Entering into _T_handle_PORT");
     return w2c__T_handle_PORT(c_fetch_sandbox_address(), (int)ctrl, (int)str);
