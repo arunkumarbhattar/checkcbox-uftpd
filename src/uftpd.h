@@ -117,7 +117,11 @@ extern struct passwd *pw;       /* FTP user's passwd entry          */
 _TLIB _TPtr<char> _T_compose_abspath(_TPtr<char> path, _TPtr<char> ctrl_cwd,int sizeof_ctrl_cwd);
 _TLIB void w2c__T_handle_CWD(void* sbx, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int);
 _TLIB unsigned int w2c__T_compose_abspath(void* sbx, unsigned int, unsigned int, unsigned int, unsigned int);
-_TLIB void w2c__T_handle_PORT(void* sbx, unsigned int, unsigned int);
+_TLIB void w2c__T_handle_PORT(void* sbx, unsigned int, unsigned int, unsigned int);
+_TLIB int _C_send_msg_trampoline(unsigned sandbox,
+                                          int arg_1,
+                                          unsigned int arg_2);
+_Callback int _C_send_msg(int sd, _TPtr<char> msg);
 typedef struct tftphdr tftp_t;
 
 typedef enum {

@@ -1,10 +1,10 @@
-#!/bin/sh
-#set -x
+!/bin/sh
+set -x
 
-if [ x"${srcdir}" = x ]; then
-    srcdir=.
-fi
-. ${srcdir}/lib.sh
+#if [ x"${srcdir}" = x ]; then
+#    srcdir=.
+#fi
+#. ${srcdir}/lib.sh
 
 get()
 {
@@ -15,13 +15,6 @@ get()
 	get $1 
 	bye
 	END
-    sleep 1
 }
-
-check_dep ftp
-get testfile.txt
-
-ls -la
-[ -s testfile.txt ] && OK
-FAIL
+	get testfile.txt
 

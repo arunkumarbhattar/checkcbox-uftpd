@@ -1,5 +1,5 @@
-#!/bin/sh
-#set -x
+!/bin/sh
+set -x
 
 if [ x"${srcdir}" = x ]; then
     srcdir=.
@@ -8,14 +8,11 @@ fi
 
 get()
 {
-	tftp 127.0.0.1:69 -c get "$1"
-	sleep 1
+	tftp <<-END
+	connect 127.0.0.1   
+       	get "$1"
+	END
 }
 
-netstat -atnup
-
-get testfile.txt
-ls -la
-[ -s testfile.txt ] && OK
-FAIL
+	get testfile.txt
 

@@ -144,21 +144,33 @@ _TPtr<char> compose_path(ctrl_t *ctrl, _TPtr<char> path) {
 _TLIB unsigned int _T_compose_path_trampoline_2(unsigned sandbox,
                                               unsigned int arg_1,
                                               unsigned int arg_2) {
-    printf("GOD IS REAL!!!");
     return c_fetch_pointer_offset(
             (void *)_T_compose_path((_TPtr<char>)arg_1, (_TPtr<char>)arg_2));
 }
 
 _TPtr<char> compose_abspath(ctrl_t *ctrl, _TPtr<char> path)
 {
+#ifdef WASM_SBX
     _TPtr<char> CtrlCwdStr = NULL;
     CtrlCwdStr = StaticUncheckedToTStrAdaptor(ctrl->cwd, strlen(ctrl->cwd));
     _TPtr<char> retVal = _T_compose_abspath(path, CtrlCwdStr, PATH_MAX);
     t_free(CtrlCwdStr);
     return retVal;
+#else
+    _TPtr<char> ptr = NULL;
+    char cwd[sizeof(ctrl->cwd)];
+    if (path && path[0] == '/') {
+        strlcpy(cwd, ctrl->cwd, sizeof(cwd));
+        memset(ctrl->cwd, 0, sizeof(ctrl->cwd));
+    }
+    ptr = compose_path(ctrl, path);
+    if (path && path[0] == '/')
+        strlcpy(ctrl->cwd, cwd, sizeof(ctrl->cwd));
+    return ptr;
+#endif
 }
 
-
+#ifdef WASM_SBX
 _TLIB _TPtr<char> _T_compose_abspath(_TPtr<char> path, _TPtr<char> ctrl_cwd,int sizeof_ctrl_cwd)
 {
     int ret_param_types[] = {0, 0, 0};
@@ -168,6 +180,7 @@ _TLIB _TPtr<char> _T_compose_abspath(_TPtr<char> path, _TPtr<char> ctrl_cwd,int 
                                                                                                                                                               1 // 1 return value
             , ret_param_types));
 }
+#endif
 
 int set_nonblock(int fd)
 {

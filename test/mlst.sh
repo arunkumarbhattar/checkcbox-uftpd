@@ -15,8 +15,6 @@ cmd()
 		EOF
 }
 
-check_dep tnftp
-
 cmd mlst bar |grep -q "perm=lepc;type=dir; bar" || FAIL "missing bar"
 cmd mlst baz |grep -q "perm=rw;size=0;type=file; baz"  || FAIL "missing baz"
 
