@@ -1,7 +1,11 @@
 ## CheckCBOX -->
 ### The configure goes as -->
 ```
-./configure CC=<Checkcbox-clang> CFLAGS="-fPIC -fsanitize=address" LDFLAGS=-L<Checkcbox_LIBS> LIBS="-ldl -lstdc++ -lSBX_CON_LIB -lisc_lib_final -lTLIBDefs -static-libsan"
+./configure 
+CC=<Checkcbox-clang> 
+CFLAGS="-fw2c_sbx" 
+LDFLAGS=-L<Checkcbox_LIBS> 
+LIBS="-ldl -lstdc++ -lSBX_CON_LIB -lisc_lib_final -lTLIBDefs"
 ```
 
 ####  All about WASM Libs 
