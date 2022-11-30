@@ -1,5 +1,7 @@
 #include "Tainted.h"
 
+int _C_send_msg(int sd, char* msg);
+
 static int is_cont(char *msg)
 {
 	char *ptr;
@@ -15,38 +17,8 @@ static int is_cont(char *msg)
 }
 
 
-static int send_msg(int sd, char *msg)
-{
-	int n = 0;
-	int l;
-
-	if (!msg) {
-	err:
-		printf("Missing argument to send_msg()");
-		return 1;
-	}
-
-	l = strlen(msg);
-	if (l <= 0)
-		goto err;
-
-	while (n < l) {
-		int result = send(sd, msg + n, l, 0);
-
-		if (result < 0) {
-			printf("Failed sending message to client");
-			return 1;
-		}
-
-		n += result;
-	}
-
-	printf("Sent: %s%s", is_cont(msg) ? "\n" : "", msg);
-
-	return 0;
-}
-
-void _T_handle_CWD(char* home, char* ctrl_cwd, char* path, int ctrl_sd, char* ctrl_client_addr, int sizeof_ctrl_cwd, int chrooted, char*(_T_compose_path)(char*, char*))
+void _T_handle_CWD(char* home, char* ctrl_cwd, char* path, int ctrl_sd, char* ctrl_client_addr, int sizeof_ctrl_cwd, int chrooted, 
+		char*(_T_compose_path)(char*, char*), int (*_C_send_msg)(int, char*))
 {
 	struct stat st;
 	char* dir = NULL;
@@ -61,7 +33,7 @@ void _T_handle_CWD(char* home, char* ctrl_cwd, char* path, int ctrl_sd, char* ct
 	dir =  _T_compose_abspath(path, ctrl_cwd, sizeof_ctrl_cwd, _T_compose_path);
 	if (!dir || stat(dir, &st) || !S_ISDIR(st.st_mode)) {
 		printf("%s: CWD: invalid path to %s: %m", ctrl_client_addr, path);
-		send_msg(ctrl_sd, "550 No such directory.\r\n");
+		_C_send_msg(ctrl_sd, "550 No such directory.\r\n");
 		return;
 	}
 
@@ -74,7 +46,7 @@ void _T_handle_CWD(char* home, char* ctrl_cwd, char* path, int ctrl_sd, char* ct
 
 done:
 	printf("New CWD: '%s'", ctrl_cwd);
-	send_msg(ctrl_sd, "250 OK\r\n");
+	_C_send_msg(ctrl_sd, "250 OK\r\n");
 }
 
 char *_T_compose_abspath(char* path, char* ctrl_cwd, int sizeof_ctrl_cwd, char*(_T_compose_path)(char*, char*))
@@ -95,17 +67,16 @@ char *_T_compose_abspath(char* path, char* ctrl_cwd, int sizeof_ctrl_cwd, char*(
 	return ptr;
 }
 
-void _T_handle_PORT(Mctrl *ctrl, char* str)
+void _T_handle_PORT(Mctrl *ctrl, char* str
+		,int (*_C_send_msg)(int, char*))
 {
 	int a, b, c, d, e, f;
 	char addr[INET_ADDRSTRLEN];
 	struct sockaddr_in sin;
-
         if (!str) {
-                send_msg(ctrl->sd, "500 No PORT specified.\r\n");
+                _C_send_msg(ctrl->sd, "500 No PORT specified.\r\n");
                 return;
         }
-	printf("Inside the WASM SANDBOX\n");
 	/* Convert PORT command's argument to IP address + port */
 	sscanf(str, "%d,%d,%d,%d,%d,%d", &a, &b, &c, &d, &e, &f);
 	snprintf(addr, sizeof(addr), "%d.%d.%d.%d", a, b, c, d);
@@ -113,7 +84,7 @@ void _T_handle_PORT(Mctrl *ctrl, char* str)
 	/* Check IPv4 address using inet_aton(), throw away converted result */
 	if (!inet_aton(addr, &(sin.sin_addr))) {
 		printf("Invalid address '%s' given to PORT command", addr);
-		send_msg(ctrl->sd, "500 Illegal PORT command.\r\n");
+		_C_send_msg(ctrl->sd, "500 Illegal PORT command.\r\n");
 		return;
 	}
 
@@ -121,5 +92,6 @@ void _T_handle_PORT(Mctrl *ctrl, char* str)
 	ctrl->data_port = e * 256 + f;
 
 	printf("Client PORT command accepted for %s:%d", ctrl->data_address, ctrl->data_port);
-	send_msg(ctrl->sd, "200 PORT command successful.\r\n");
+	_C_send_msg(ctrl->sd, "200 PORT command successful.\r\n");
+	return;
 }

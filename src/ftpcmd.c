@@ -20,6 +20,8 @@
 #include <ctype.h>
 #include <arpa/ftp.h>
 #include <string.h>
+#include <stdio_tainted.h>
+#include <string_tainted.h>
 #ifdef HAVE_SYS_TIME_H
 # include <sys/time.h>
 #endif
@@ -34,7 +36,7 @@ typedef struct {
 	void (*cb)(ctrl_t *ctr, _TPtr<char> arg);
 } ftp_cmd_t;
 
-
+int _C_send_msg_callbackVal;
 typedef Tstruct _M_ctrl{
         //We cannot marshall all of ctrl into Sandbox as it contains confidential information,
         // Hence we selectively create a new subset structure that has the fields used by this function
@@ -45,7 +47,7 @@ typedef Tstruct _M_ctrl{
         int  data_port;
 }Mctrl;
 
- typedef _Decoy Tstruct Spl__M_ctrl{
+_Decoy typedef Tstruct Spl__M_ctrl{
         //We cannot marshall all of ctrl into Sandbox as it contains confidential information,
         // Hence we selectively create a new subset structure that has the fields used by this function
         // This way, we can perform marshalling pre and post Sandbox call
@@ -550,19 +552,23 @@ _TLIB unsigned int _T_compose_path_trampoline(unsigned sandbox,
             (void *)_T_compose_path((_TPtr<char>)arg_1, (_TPtr<char>)arg_2));
 }
 
-_Tainted void _T_handle_CWD(_TPtr<char> home_, _TPtr<char> ctrl_cwd, _TPtr<char> path, int ctrl_sd, _TPtr<char> ctrl_client_addr, int sizeof_ctrl_cwd, int chrooted , _TPtr<_TPtr<char>(_TPtr<char>, _TPtr<char>)>)
+_Tainted void _T_handle_CWD(_TPtr<char> home_, _TPtr<char> ctrl_cwd, _TPtr<char> path,
+                            int ctrl_sd, _TPtr<char> ctrl_client_addr,
+                            int sizeof_ctrl_cwd, int chrooted , _TPtr<_TPtr<char>(_TPtr<char>, _TPtr<char>)>)
 {
     int ret_param_types[] = {0, 0, 0};
-    printf("Entering into the WASM SANDBOX REGION");
-    return w2c__T_handle_CWD(c_fetch_sandbox_address(), (int)home_, (int)ctrl_cwd, (int)path, ctrl_sd, (int)ctrl_client_addr, sizeof_ctrl_cwd, chrooted, sbx_register_callback(_T_compose_path_trampoline, 2 // 2 args
-                                                                                                                                                             ,
-                                                                                                                                                             1 // 1 return value
-                                                                                                                                                             , ret_param_types));
+    return w2c__T_handle_CWD(c_fetch_sandbox_address(), (int)home_, (int)ctrl_cwd, (int)path, ctrl_sd,
+                             (int)ctrl_client_addr,
+                             sizeof_ctrl_cwd,
+                             chrooted,
+                             sbx_register_callback(_T_compose_path_trampoline,
+                                                   2 // 2 args
+                                                   , 1
+                                                    , ret_param_types));
 }
 
 static void handle_CDUP(ctrl_t *ctrl, _TPtr<char> path)
 {
-	//handle_CWD(ctrl, StaticUncheckedToTStrAdaptor("..", strlen("..")));
     _TPtr<char>TaintedHomeStr = NULL;
     _TPtr<char>CtrlCwdStr = NULL;
     _TPtr<char>ClientAddrStr = NULL;
@@ -575,16 +581,31 @@ static void handle_CDUP(ctrl_t *ctrl, _TPtr<char> path)
     t_free(CtrlCwdStr);
     t_free(ClientAddrStr);
 }
+_Callback int _C_send_msg(int sd, _TPtr<char> msg)
+{
+    char* _C_msg = (char*)malloc(t_strlen(msg));
+    t_strcpy(_C_msg, msg);
+    return send_msg(sd, _C_msg);
+}
+
+_TLIB int _C_send_msg_trampoline(unsigned sandbox,
+                                             int arg_1,
+                                             unsigned int arg_2) {
+    return _C_send_msg(arg_1, (_TPtr<char>)arg_2);
+}
 
 _Tainted void _T_handle_PORT(_TPtr<Mctrl> ctrl, _TPtr<char> str)
 {
-    printf("Entering into _T_handle_PORT");
-    return w2c__T_handle_PORT(c_fetch_sandbox_address(), (int)ctrl, (int)str);
+    int ret_param_types[] = {0, 0, 0};
+    return w2c__T_handle_PORT(c_fetch_sandbox_address(), (int)ctrl, (int)str, sbx_register_callback((void*)_C_send_msg_trampoline,
+                                                                                                    2,
+                                                                                                    1,
+                                                                                                    ret_param_types
+                                                                                                    ));
 }
 
 static void handle_PORT(ctrl_t *ctrl, _TPtr<char> str)
 {
-    printf("WE ARE HERE: '%s'");
     //Allocate memory for Mctrl
     _TPtr<Mctrl> _Mctrl = (_TPtr<Mctrl>)t_malloc(sizeof(Mctrl));
     _Mctrl->data_address = (_TPtr<char>)t_malloc(INET_ADDRSTRLEN*sizeof(char));
@@ -1291,9 +1312,6 @@ static void handle_RETR(ctrl_t *ctrl, _TPtr<char> file)
 
 	path = compose_abspath(ctrl, file);
 	if (!path || t_stat(path, &st)) {
-        if (!path)
-            printf("PATH RETURNED NULL");
-
 		//INFO("%s: RETR: invalid path to %s: %m", ctrl->clientaddr, file);
 		send_msg(ctrl->sd, "550 No such file or directory.\r\n");
 		return;
@@ -1313,9 +1331,6 @@ static void handle_RETR(ctrl_t *ctrl, _TPtr<char> file)
 	}
 
 	ctrl->fp = fp;
-//    int argLen = (file == NULL)? 0 : t_strlen(file);
-//    char* checkedArg = (char*)malloc(argLen);
-//    t_strncpy(checkedArg, t_strdup(file ? file : ""), argLen);
 	ctrl->file = (char*)t_strdup(file ? file : "");
 
 	if (ctrl->data_sd > -1) {
@@ -1330,12 +1345,10 @@ static void handle_RETR(ctrl_t *ctrl, _TPtr<char> file)
 
 		send_msg(ctrl->sd, "125 Data connection already open; transfer starting.\r\n");
 		uev_io_init(ctrl->ctx, &ctrl->data_watcher, do_RETR, ctrl, ctrl->data_sd, UEV_WRITE);
- //       free(checkedArg);
         return;
 	}
 
 	do_PORT(ctrl, PENDING_RETR);
-   // free(checkedArg);
 }
 
 /* Request to set mtime, ncftp does this */
@@ -1787,8 +1800,6 @@ static void  read_client_command(uev_t *w, void *arg, int events)
 
 	for (cmd = &supported[0]; cmd->command; cmd++) {
 		if (string_compare(command, cmd->command)) {
-            //print the argument here
-            printf("we have argument as %s", argument);
             int argLen = 0;
             if (argument!= NULL)
                 argLen = strlen(argument);

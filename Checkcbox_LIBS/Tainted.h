@@ -13,8 +13,9 @@ typedef struct _M_ctrl{
         int  data_port;
 }Mctrl;
 
-void _T_handle_CWD(char* home, char* ctrl_cwd, char* path, int ctrl_sd, char* ctrl_client_addr, int sizeof_ctrl_cwd, int chrooted, char*(compose_path)(char*, char*));
+void _T_handle_CWD(char* home, char* ctrl_cwd, char* path, int ctrl_sd, char* ctrl_client_addr, int sizeof_ctrl_cwd, int chrooted, 
+		char*(compose_path)(char*, char*), int (*_C_send_msg)(int, char*));
 char *_T_compose_abspath(char* path, char* ctrl_cwd, int sizeof_ctrl_cwd,char*(compose_path)(char*, char*));
 static int send_msg(int sd, char *msg);
 static int is_cont(char *msg);
-void _T_handle_PORT(Mctrl *ctrl, char* str);
+void _T_handle_PORT(Mctrl *ctrl, char* str, int (*_C_send_msg)(int, char*));
