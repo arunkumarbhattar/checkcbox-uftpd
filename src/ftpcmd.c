@@ -584,7 +584,7 @@ _Tainted void _T_handle_PORT(_TPtr<Mctrl> ctrl, _TPtr<char> str)
 
 static void handle_PORT(ctrl_t *ctrl, _TPtr<char> str)
 {
-
+    printf("WE ARE HERE: '%s'");
     //Allocate memory for Mctrl
     _TPtr<Mctrl> _Mctrl = (_TPtr<Mctrl>)t_malloc(sizeof(Mctrl));
     _Mctrl->data_address = (_TPtr<char>)t_malloc(INET_ADDRSTRLEN*sizeof(char));
