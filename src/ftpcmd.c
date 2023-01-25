@@ -545,16 +545,13 @@ done:
 	send_msg(ctrl->sd, "250 OK\r\n");
 }
 
-#ifdef WASM_SBX
 _TLIB unsigned int _T_compose_path_trampoline(unsigned sandbox,
                                              unsigned int arg_1,
                                              unsigned int arg_2) {
     return c_fetch_pointer_offset(
             (void *)_T_compose_path((_TPtr<char>)arg_1, (_TPtr<char>)arg_2));
 }
-#endif
 
-#ifdef WASM_SBX
 _Tainted void _T_handle_CWD(_TPtr<char> home_, _TPtr<char> ctrl_cwd, _TPtr<char> path,
                             int ctrl_sd, _TPtr<char> ctrl_client_addr,
                             int sizeof_ctrl_cwd, int chrooted , _TPtr<_TPtr<char>(_TPtr<char>, _TPtr<char>)>)
@@ -569,11 +566,9 @@ _Tainted void _T_handle_CWD(_TPtr<char> home_, _TPtr<char> ctrl_cwd, _TPtr<char>
                                                    , 1
                                                     , ret_param_types));
 }
-#endif
 
 static void handle_CDUP(ctrl_t *ctrl, _TPtr<char> path)
 {
-#ifdef WASM_SBX
     _TPtr<char>TaintedHomeStr = NULL;
     _TPtr<char>CtrlCwdStr = NULL;
     _TPtr<char>ClientAddrStr = NULL;
@@ -585,28 +580,20 @@ static void handle_CDUP(ctrl_t *ctrl, _TPtr<char> path)
     t_free(TaintedHomeStr);
     t_free(CtrlCwdStr);
     t_free(ClientAddrStr);
-#else
-    handle_CWD(ctrl, StaticUncheckedToTStrAdaptor("..", strlen("..")));
-#endif
 }
-#ifdef WASM_SBX
 _Callback int _C_send_msg(int sd, _TPtr<char> msg)
 {
     char* _C_msg = (char*)malloc(t_strlen(msg));
     t_strcpy(_C_msg, msg);
     return send_msg(sd, _C_msg);
 }
-#endif
 
-#ifdef WASM_SBX
 _TLIB int _C_send_msg_trampoline(unsigned sandbox,
                                              int arg_1,
                                              unsigned int arg_2) {
     return _C_send_msg(arg_1, (_TPtr<char>)arg_2);
 }
-#endif
 
-#ifdef WASM_SBX
 _Tainted void _T_handle_PORT(_TPtr<Mctrl> ctrl, _TPtr<char> str)
 {
     int ret_param_types[] = {0, 0, 0};
@@ -616,11 +603,9 @@ _Tainted void _T_handle_PORT(_TPtr<Mctrl> ctrl, _TPtr<char> str)
                                                                                                     ret_param_types
                                                                                                     ));
 }
-#endif
 
 static void handle_PORT(ctrl_t *ctrl, _TPtr<char> str)
 {
-#ifdef WASM_SBX
     //Allocate memory for Mctrl
     _TPtr<Mctrl> _Mctrl = (_TPtr<Mctrl>)t_malloc(sizeof(Mctrl));
     _Mctrl->data_address = (_TPtr<char>)t_malloc(INET_ADDRSTRLEN*sizeof(char));
@@ -643,35 +628,6 @@ static void handle_PORT(ctrl_t *ctrl, _TPtr<char> str)
     ctrl->sd = _Mctrl->sd;
     t_strncpy(ctrl->data_address, _Mctrl->data_address,INET_ADDRSTRLEN);
     ctrl->data_port = _Mctrl->data_port;
-#else
-    int a, b, c, d, e, f;
-    char addr[INET_ADDRSTRLEN];
-    struct sockaddr_in sin;
-    if (ctrl->data_sd > 0) {
-        uev_io_stop(&ctrl->data_watcher);
-        close(ctrl->data_sd);
-        ctrl->data_sd = -1;
-    }
-
-    if (!str) {
-        send_msg(ctrl->sd, "500 No PORT specified.\r\n");
-        return;
-    }
-    /* Convert PORT command's argument to IP address + port */
-    t_sscanf(str, "%d,%d,%d,%d,%d,%d", &a, &b, &c, &d, &e, &f);
-    snprintf(addr, sizeof(addr), "%d.%d.%d.%d", a, b, c, d);
-    /* Check IPv4 address using inet_aton(), throw away converted result */
-    if (!inet_aton(addr, &(sin.sin_addr))) {
-        ERR(0, "Invalid address '%s' given to PORT command", addr);
-        send_msg(ctrl->sd, "500 Illegal PORT command.\r\n");
-        return;
-    }
-
-    strlcpy(ctrl->data_address, addr, sizeof(ctrl->data_address));
-    ctrl->data_port = e * 256 + f;
-    DBG("Client PORT command accepted for %s:%d", ctrl->data_address, ctrl->data_port);
-    send_msg(ctrl->sd, "200 PORT command successful.\r\n");
-#endif
     return;
 }
 
