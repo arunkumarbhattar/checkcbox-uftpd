@@ -41,6 +41,14 @@
  *
  */
 
+#ifdef WASM_SBX
+#define __free__(S) t_free(S)
+#elif HEAP_SBX
+#define __free__(S) hoard_free(S)
+#else
+#define __free__(S) free(S)
+#endif
+
 _TLIB static size_t  t_strlcpy    (char* dst : itype(_TPtr<char>), const _TPtr<char> src, size_t siz);
 
 /* Send @len bytes data in @ctrl->buf */
@@ -217,18 +225,18 @@ static int handle_RRQ(ctrl_t *ctrl)
     TaintedFileName = StaticUncheckedToTStrAdaptor(ctrl->file, strlen(ctrl->file));
 	path = compose_path(ctrl, TaintedFileName);
 	if (!path) {
-        t_free(TaintedFileName);
+        __free__(TaintedFileName);
 		ERR(errno, "%s: Invalid path to file %s", ctrl->clientaddr, ctrl->file);
 		return send_ERROR(ctrl, ENOTFOUND, NULL);
 	}
 
 	ctrl->fp = t_fopen(path, "r");
 	if (!ctrl->fp) {
-        t_free(TaintedFileName);
+        __free__(TaintedFileName);
 		ERR(errno, "%s: Failed opening '%s'", ctrl->clientaddr, (const char*)TaintedToCheckedStrAdaptor(path, t_strlen(path)));
 		return send_ERROR(ctrl, ENOTFOUND, NULL);
 	}
-    t_free(TaintedFileName);
+    __free__(TaintedFileName);
 	return !send_DATA(ctrl, 0);
 }
 
@@ -336,12 +344,12 @@ static void read_client_command(uev_t *w, void *arg, int events)
 		if (parse_RWRQ(ctrl, TaintedTh_Stuff, len)) {
 			ERR(errno, "Failed parsing TFTP RRQ");
 			active = 0;
-            t_free(TaintedTh_Stuff);
+            __free__(TaintedTh_Stuff);
 			break;
 		}
 		LOG("tftp RRQ '%s' from %s:%d", ctrl->file, ctrl->clientaddr, port);
 		active = handle_RRQ(ctrl);
-        t_free(TaintedTh_Stuff);
+        __free__(TaintedTh_Stuff);
 		free(ctrl->file);
 		break;
 
@@ -353,12 +361,12 @@ static void read_client_command(uev_t *w, void *arg, int events)
 		if (parse_RWRQ(ctrl, TaintedTh_Stuff, len)) {
 			ERR(errno, "Failed parsing TFTP WRQ");
 			active = 0;
-            t_free(TaintedTh_Stuff);
+            __free__(TaintedTh_Stuff);
 			break;
 		}
 		LOG("tftp WRQ '%s' from %s:%d", ctrl->file, ctrl->clientaddr, port);
 		handle_WRQ(ctrl);
-        t_free(TaintedTh_Stuff);
+        __free__(TaintedTh_Stuff);
 		free(ctrl->file);
 		break;
 

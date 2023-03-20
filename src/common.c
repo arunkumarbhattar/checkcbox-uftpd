@@ -18,6 +18,14 @@
 #include "uftpd.h"
 #include <checkcbox_extensions.h>
 
+#ifdef WASM_SBX
+#define __free__(S) t_free(S)
+#elif HEAP_SBX
+#define __free__(S) hoard_free(S)
+#else
+#define __free__(S) free(S)
+#endif
+
 _TLIB static size_t  t_strlcat    (char* dst : itype(_TPtr<char>), const char* src: itype(_TPtr<const char>), size_t siz);
 _TLIB static _TPtr<char> t_basename (_TPtr<char> __path);
 _TLIB static _TPtr<char> t_dirname (_TPtr<char> __path);
@@ -41,6 +49,7 @@ int chrooted = 0;
  *
  * Forced dir ------> /srv/ftp/etc
  */
+#ifdef WASM_SBX
 _Callback _TPtr<char> _T_compose_path(_TPtr<char> ctrl_cwd, _TPtr<char> path)
 {
     _TPtr<char> rpath = (_TPtr<char>)TNtStrMalloc(PATH_MAX);
@@ -123,24 +132,95 @@ check:
 _TPtr<char> compose_path(ctrl_t *ctrl, _TPtr<char> path) {
     return _T_compose_path(StaticUncheckedToTStrAdaptor(ctrl->cwd, PATH_MAX), path);
 }
+#else
+_TPtr<char> compose_path(ctrl_t *ctrl, _TPtr<char> path)
+{
+    _TPtr<char> rpath = (_TPtr<char>)TNtStrMalloc(PATH_MAX);
+    _TPtr<char> dir = (_TPtr<char>)TNtStrMalloc(PATH_MAX);
+    //set all the memory to 0
+    t_memset(dir, 0, PATH_MAX);
+    _TPtr<char> name = NULL;
+    _TPtr<char> ptr = NULL;
+    struct stat st;
 
-//_TPtr<char> compose_abspath(ctrl_t *ctrl, _TPtr<char> path)
-//{
-//	_TPtr<char> ptr = NULL;
-//	char cwd[sizeof(ctrl->cwd)];
-//
-//	if (path && path[0] == '/') {
-//		strlcpy(cwd, ctrl->cwd, sizeof(cwd));
-//		memset(ctrl->cwd, 0, sizeof(ctrl->cwd));
-//	}
-//
-//	ptr = compose_path(ctrl, path);
-//
-//	if (path && path[0] == '/')
-//		strlcpy(ctrl->cwd, cwd, sizeof(ctrl->cwd));
-//
-//	return ptr;
-//}
+    t_strlcpy(dir, StaticUncheckedToTStrAdaptor(ctrl->cwd,PATH_MAX), PATH_MAX);
+    //DBG("Compose path from cwd: %s, arg: %s", ctrl->cwd, path ?: "");
+    if (!path || !t_strlen(path))
+        goto check;
+    if (path[0] != '/') {
+        if (dir[t_strlen(dir) - 1] != '/')
+            t_strlcat(dir, "/", PATH_MAX);
+    }
+    t_strlcat(dir, path, PATH_MAX);
+    check:
+    while ((ptr = t_strstr(dir, "//")))
+        t_memmove(ptr, &ptr[1], t_strlen(&ptr[1]) + 1);
+    if (!chrooted) {
+        size_t len = strlen(home);
+        DBG("Server path from CWD: %s", (const char*)TaintedToCheckedStrAdaptor(dir, t_strlen(dir)));
+        if (len > 0 && home[len - 1] == '/')
+            len--;
+        t_memmove(dir + len, dir, t_strlen(dir) + 1);
+        t_memcpy(dir, home, len);
+        DBG("Resulting non-chroot path: %s", (const char*)TaintedToCheckedStrAdaptor(dir, t_strlen(dir)));
+    }
+    /*
+     * Handle directories slightly differently, since dirname() on a
+     * directory returns the parent directory.  So, just squash ..
+     */
+    if (!t_stat(dir, &st) && S_ISDIR(st.st_mode)) {
+        if (!t_realpath(dir, rpath))
+        {
+            DBG("Exiting because we messed up in compose path\n");
+            return NULL;
+        }
+    } else {
+        /*
+         * Check realpath() of directory containing the file, a
+         * STOR may want to save a new file.  Then append the
+         * file and return it.
+         */
+        name = t_basename(path);
+        ptr = t_dirname(dir);
+        t_memset(rpath, 0, PATH_MAX);
+        if (!t_realpath(ptr, rpath)) {
+            //INFO("Failed realpath(%s): %m", ptr);
+            return NULL;
+        }
+        //DBG("realpath(%s) => %s", ptr, rpath);
+        if (rpath[1] != 0)
+            t_strlcat(rpath, "/", PATH_MAX);
+        t_strlcat(rpath, name, PATH_MAX);
+    }
+    if (!chrooted && t_strncmp(rpath, home, strlen(home))) {
+        DBG("Exiting because Failed chroot\n");
+        //DBG("Failed non-chroot dir:%s vs home:%s", dir, home);
+        return NULL;
+    }
+    //DBG("Final path to file: %s", rpath);
+    return rpath;
+}
+
+_TPtr<char> compose_abspath(ctrl_t *ctrl, _TPtr<char> path)
+{
+	_TPtr<char> ptr = NULL;
+	char cwd[sizeof(ctrl->cwd)];
+
+	if (path && path[0] == '/') {
+		strlcpy(cwd, ctrl->cwd, sizeof(cwd));
+		memset(ctrl->cwd, 0, sizeof(ctrl->cwd));
+	}
+
+	ptr = compose_path(ctrl, path);
+
+	if (path && path[0] == '/')
+		strlcpy(ctrl->cwd, cwd, sizeof(ctrl->cwd));
+
+	return ptr;
+}
+#endif
+
+#ifdef WASM_SBX
 _TLIB unsigned int _T_compose_path_trampoline_2(unsigned sandbox,
                                               unsigned int arg_1,
                                               unsigned int arg_2) {
@@ -150,27 +230,13 @@ _TLIB unsigned int _T_compose_path_trampoline_2(unsigned sandbox,
 
 _TPtr<char> compose_abspath(ctrl_t *ctrl, _TPtr<char> path)
 {
-#ifdef WASM_SBX
     _TPtr<char> CtrlCwdStr = NULL;
     CtrlCwdStr = StaticUncheckedToTStrAdaptor(ctrl->cwd, strlen(ctrl->cwd));
     _TPtr<char> retVal = _T_compose_abspath(path, CtrlCwdStr, PATH_MAX);
-    t_free(CtrlCwdStr);
+    __free__(CtrlCwdStr);
     return retVal;
-#else
-    _TPtr<char> ptr = NULL;
-    char cwd[sizeof(ctrl->cwd)];
-    if (path && path[0] == '/') {
-        strlcpy(cwd, ctrl->cwd, sizeof(cwd));
-        memset(ctrl->cwd, 0, sizeof(ctrl->cwd));
-    }
-    ptr = compose_path(ctrl, path);
-    if (path && path[0] == '/')
-        strlcpy(ctrl->cwd, cwd, sizeof(ctrl->cwd));
-    return ptr;
-#endif
 }
 
-#ifdef WASM_SBX
 _TLIB _TPtr<char> _T_compose_abspath(_TPtr<char> path, _TPtr<char> ctrl_cwd,int sizeof_ctrl_cwd)
 {
     int ret_param_types[] = {0, 0, 0};

@@ -26,6 +26,14 @@
 # include <sys/time.h>
 #endif
 
+#ifdef WASM_SBX
+#define __free__(S) t_free(S)
+#elif HEAP_SBX
+#define __free__(S) hoard_free(S)
+#else
+#define __free__(S) free(S)
+#endif
+
 #define LISTMODE_LIST 0
 #define LISTMODE_NLST 1
 #define LISTMODE_MLST 2
@@ -47,6 +55,7 @@ typedef Tstruct _M_ctrl{
         int  data_port;
 }Mctrl;
 
+#ifdef WASM_SBX
 _Decoy typedef Tstruct Spl__M_ctrl{
         //We cannot marshall all of ctrl into Sandbox as it contains confidential information,
         // Hence we selectively create a new subset structure that has the fields used by this function
@@ -63,6 +72,7 @@ Spl_Mctrl Spl_Mctrl_Val;
 Spl_Mctrl Dummy_Spl_Mctrl(void) {
     return Spl_Mctrl_Val;
 }
+#endif
 static ftp_cmd_t supported[];
 
 static void do_PORT(ctrl_t *ctrl, pend_t pending);
@@ -544,7 +554,7 @@ done:
 	DBG("New CWD: '%s'", ctrl->cwd);
 	send_msg(ctrl->sd, "250 OK\r\n");
 }
-
+#ifdef WASM_SBX
 _TLIB unsigned int _T_compose_path_trampoline(unsigned sandbox,
                                              unsigned int arg_1,
                                              unsigned int arg_2) {
@@ -566,9 +576,11 @@ _Tainted void _T_handle_CWD(_TPtr<char> home_, _TPtr<char> ctrl_cwd, _TPtr<char>
                                                    , 1
                                                     , ret_param_types));
 }
+#endif
 
 static void handle_CDUP(ctrl_t *ctrl, _TPtr<char> path)
 {
+#ifdef WASM_SBX
     _TPtr<char>TaintedHomeStr = NULL;
     _TPtr<char>CtrlCwdStr = NULL;
     _TPtr<char>ClientAddrStr = NULL;
@@ -577,10 +589,16 @@ static void handle_CDUP(ctrl_t *ctrl, _TPtr<char> path)
     ClientAddrStr = StaticUncheckedToTStrAdaptor(ctrl->clientaddr, INET_ADDRSTRLEN);
     _T_handle_CWD(TaintedHomeStr, CtrlCwdStr, path,
                   ctrl->sd, ClientAddrStr, PATH_MAX, chrooted, &_T_compose_path);
-    t_free(TaintedHomeStr);
-    t_free(CtrlCwdStr);
-    t_free(ClientAddrStr);
+    __free__(TaintedHomeStr);
+    __free__(CtrlCwdStr);
+    __free__(ClientAddrStr);
+#elif HEAP_SBX
+    handle_CWD(ctrl, StaticUncheckedToTStrAdaptor("..", strlen("..")));
+#else
+    handle_CWD(ctrl, path);
+#endif
 }
+#ifdef WASM_SBX
 _Callback int _C_send_msg(int sd, _TPtr<char> msg)
 {
     char* _C_msg = (char*)malloc(t_strlen(msg));
@@ -603,9 +621,11 @@ _Tainted void _T_handle_PORT(_TPtr<Mctrl> ctrl, _TPtr<char> str)
                                                                                                     ret_param_types
                                                                                                     ));
 }
+#endif
 
 static void handle_PORT(ctrl_t *ctrl, _TPtr<char> str)
 {
+#ifdef WASM_SBX
     //Allocate memory for Mctrl
     _TPtr<Mctrl> _Mctrl = (_TPtr<Mctrl>)t_malloc(sizeof(Mctrl));
     _Mctrl->data_address = (_TPtr<char>)t_malloc(INET_ADDRSTRLEN*sizeof(char));
@@ -629,6 +649,35 @@ static void handle_PORT(ctrl_t *ctrl, _TPtr<char> str)
     t_strncpy(ctrl->data_address, _Mctrl->data_address,INET_ADDRSTRLEN);
     ctrl->data_port = _Mctrl->data_port;
     return;
+#else
+    int a, b, c, d, e, f;
+    char addr[INET_ADDRSTRLEN];
+    struct sockaddr_in sin;
+    if (ctrl->data_sd > 0) {
+        uev_io_stop(&ctrl->data_watcher);
+        close(ctrl->data_sd);
+        ctrl->data_sd = -1;
+    }
+
+    if (!str) {
+        send_msg(ctrl->sd, "500 No PORT specified.\r\n");
+        return;
+    }
+    /* Convert PORT command's argument to IP address + port */
+    t_sscanf(str, "%d,%d,%d,%d,%d,%d", &a, &b, &c, &d, &e, &f);
+    snprintf(addr, sizeof(addr), "%d.%d.%d.%d", a, b, c, d);
+    /* Check IPv4 address using inet_aton(), throw away converted result */
+    if (!inet_aton(addr, &(sin.sin_addr))) {
+        ERR(0, "Invalid address '%s' given to PORT command", addr);
+        send_msg(ctrl->sd, "500 Illegal PORT command.\r\n");
+        return;
+    }
+
+    strlcpy(ctrl->data_address, addr, sizeof(ctrl->data_address));
+    ctrl->data_port = e * 256 + f;
+    DBG("Client PORT command accepted for %s:%d", ctrl->data_address, ctrl->data_port);
+    send_msg(ctrl->sd, "200 PORT command successful.\r\n");
+#endif
 }
 
 static void handle_EPRT(ctrl_t *ctrl, _TPtr<char> str)
@@ -904,7 +953,7 @@ static void do_LIST(uev_t *w, void *arg, int events)
 		path = compose_path(ctrl, cwd);
 		if (!path) {
 		fail:
-            t_free(TaintedName);
+            __free__(TaintedName);
 			INFO("%s: LIST: Failed reading status for %s: %m", ctrl->clientaddr, path ? path : name);
 			continue;
 		}

@@ -1,4 +1,4 @@
-!/bin/sh
+#!/bin/sh
 set -x
 
 #if [ x"${srcdir}" = x ]; then
